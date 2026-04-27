@@ -1,0 +1,50 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+*.hprof
+
+# Kotlin/Native
+.kotlin/
+
+# Xcode / CocoaPods
+iosApp/Pods/
+iosApp/Podfile.lock
+iosApp/build/
+iosApp/DerivedData/
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Generated app icons — produced on every Gradle sync from the SSOT logo.
+# Kept out of git so drift can't happen; if you ever need to inspect them,
+# run `./gradlew :shared:generateAppIcons` and look under the platform dirs.
+androidApp/src/main/res/mipmap-*/
+androidApp/src/main/res/drawable/ic_launcher_foreground.png
+androidApp/src/main/res/values/ic_launcher_background.xml
+iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/icon-*.png
+iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/Contents.json
+shared/src/jvmMain/resources/icons/
+shared/src/jsMain/resources/favicon.ico
+shared/src/jsMain/resources/icon-*.png
+shared/src/jsMain/resources/manifest.webmanifest
+
+# Optional: user-supplied logo override (ignore if you want each developer
+# to keep their own). Comment out if you commit a shared override.
+logo/override.png
+
+# macOS
+.DS_Store
+
+# JS / Node
+node_modules/
+kotlin-js-store/
+
+# Logs / misc
+*.log
