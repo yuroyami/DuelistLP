@@ -26,6 +26,7 @@ class OstController(private val scope: CoroutineScope) {
         Tournament("ost-tournament.mp3", "files/ost/yugioh-tournament-duel.mp3"),
         Losing("ost-losing.mp3", "files/ost/yugioh-losing-theme.mp3"),
         Winning("ost-winning.mp3", "files/ost/yugioh-winning-theme.mp3"),
+        MatchEnd("ost-match-end.mp3", "files/ost/yugioh-match-end.mp3"),
     }
 
     private val engine = AudioEngine().also {

@@ -148,11 +148,10 @@ fun DuelScreen(
     }
 
     LaunchedEffect(state.winner) {
-        val winner = state.winner ?: return@LaunchedEffect
-        println("DuelScreen: winner=$winner — switching OST → Winning")
-        // On victory, hand off to the winning theme regardless of LP totals
+        state.winner ?: return@LaunchedEffect
+        // On victory, hand off to the match-end theme regardless of LP totals
         // and stop the SFX loop immediately.
-        ost.play(OstController.Track.Winning)
+        ost.play(OstController.Track.MatchEnd)
         lpSfx.stabilize()
         stabilizeJob?.cancel()
         delay(1800)

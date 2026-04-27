@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 
 /**
@@ -40,6 +41,9 @@ fun StrokedText(
     ) {
         Text(
             text = text,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Visible,
             style = style.copy(
                 color = strokeColor,
                 drawStyle = Stroke(width = widthPx, miter = 4f, join = StrokeJoin.Round),
@@ -47,6 +51,9 @@ fun StrokedText(
         )
         Text(
             text = text,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Visible,
             style = style.copy(color = fillColor),
         )
     }

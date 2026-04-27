@@ -141,13 +141,15 @@ private fun VictoryHalf(
             .then(if (rotated) Modifier.rotate(180f) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        // Scale the banner text to ~28% of the half's height (capped) so it
-        // works on iPhone XS as well as on big screens.
-        val byHeight = (maxHeight.value * 0.28f)
-        val byWidth = maxWidth.value / (text.length * 0.55f)
-        val winnerSp = minOf(byHeight, byWidth).toInt().coerceIn(40, 96)
-        val loserSp = (winnerSp * 0.78f).toInt()
-        val titleSp = if (isWinner) winnerSp else loserSp
+        // Scale the banner text to fit the half. Height target is ~28% of the
+        // half's height; width target accounts for Heuristica bold-italic's
+        // glyph advance (~0.62 of fontSize) plus StrokedText's ~25% horizontal
+        // padding plus the stroke contribution on each side.
+        val byHeight = maxHeight.value * 0.28f
+        val widthDenom = 0.62f * text.length + 0.30f
+        val byWidth = maxWidth.value / widthDenom
+        val fitSp = minOf(byHeight, byWidth).coerceIn(20f, 96f)
+        val titleSp = (if (isWinner) fitSp else fitSp * 0.78f).toInt()
 
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
