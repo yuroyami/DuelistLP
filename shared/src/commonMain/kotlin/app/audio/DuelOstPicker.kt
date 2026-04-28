@@ -1,6 +1,7 @@
 package app.audio
 
 import app.model.MatchEvent
+import app.model.PlayerSlot
 
 /**
  * Picks which [OstController.Track] should play during a duel given the
@@ -12,8 +13,8 @@ import app.model.MatchEvent
  * Rules:
  *   - both LP < threshold → Tournament
  *   - one LP < threshold (other ≥ threshold) → Losing
- *   - last event was a positive LP change that crossed UP through threshold
- *     (was ≤ threshold before, > threshold after) → Winning
+ *   - the last event was a tournament-exiting comeback — both players were
+ *     below threshold and one healed up across it → Winning
  *   - otherwise → Duel
  */
 object DuelOstPicker {
@@ -27,13 +28,19 @@ object DuelOstPicker {
         val threshold = startingLp / 2
         val bothBelow = p1Lp < threshold && p2Lp < threshold
         val anyBelow = p1Lp < threshold || p2Lp < threshold
-        val crossedUp = lastEvent is MatchEvent.LpChange &&
+
+        // Comeback only counts when the OTHER player is still below threshold,
+        // i.e. we were in Tournament before this event and just broke out of it.
+        // The opponent's LP didn't change in this event, so their current value
+        // is also their pre-event value.
+        val crossedUpFromTournament = lastEvent is MatchEvent.LpChange &&
             lastEvent.delta > 0 &&
-            lastEvent.before <= threshold &&
-            lastEvent.after > threshold
+            lastEvent.before < threshold &&
+            lastEvent.after >= threshold &&
+            (if (lastEvent.target == PlayerSlot.P1) p2Lp else p1Lp) < threshold
 
         return when {
-            crossedUp && !bothBelow -> OstController.Track.Winning
+            crossedUpFromTournament -> OstController.Track.Winning
             bothBelow -> OstController.Track.Tournament
             anyBelow -> OstController.Track.Losing
             else -> OstController.Track.Duel

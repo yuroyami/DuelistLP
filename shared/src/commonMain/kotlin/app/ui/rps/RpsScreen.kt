@@ -192,8 +192,11 @@ private fun RpsHalf(
         val cardHeightDp = (cardWidthDp.value * 1.15f).dp
         val marqueeH = (halfH.value * 0.40f).toInt().coerceIn(72, 130).dp
 
+        // Vertical-only padding here so the shuffle marquee can extend to the
+        // screen's left/right edges. Other children are center-aligned and
+        // short, so they don't need horizontal insets.
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(vertical = 16.dp),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
