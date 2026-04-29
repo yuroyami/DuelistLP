@@ -33,6 +33,12 @@ expect class AudioEngine() {
     /** Linear volume in [0f, 1f]. */
     fun setVolume(volume: Float)
 
+    /**
+     * Set a callback fired when playback reaches the end of the loaded media.
+     * Only fires when looping is OFF. Pass `null` to clear.
+     */
+    fun setOnComplete(callback: (() -> Unit)?)
+
     /** Seek to [positionMs] from the start. */
     fun seekTo(positionMs: Long)
 

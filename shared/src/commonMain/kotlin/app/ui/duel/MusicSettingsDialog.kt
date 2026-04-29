@@ -15,33 +15,44 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import app.audio.DmpAvailability
 import app.audio.DmpTrackKind
+import app.audio.LocalOst
 import app.audio.MusicMode
 import app.audio.MusicPack
 import app.audio.MusicSettings
+import app.audio.OstTracks
 import app.ui.theme.DuelColors
 
 /**
  * Music settings popover. Three sections:
  *  1. Mode (Auto / Manual / Off)
  *  2. Pack chips (each tinted with the pack's signature color)
- *  3. One-shot stingers (Tribute Summon for active pack, plus Exodia)
+ *  3. One-shot stingers (Tribute Summon for active pack, plus Exodia).
+ *     Tap to play; tap again (while it's playing) to stop. The button shows
+ *     a highlighted state for the duration of the stinger.
  */
 @Composable
 fun MusicSettingsDialog(
     settings: MusicSettings,
     onSettingsChange: (MusicSettings) -> Unit,
-    onPlayTributeSummon: () -> Unit,
-    onPlayExodia: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val ost = LocalOst.current
+    val activeOverlay by ost.currentOverlay.collectAsState()
+
+    val tributeTrack = OstTracks.dmp(settings.pack, DmpTrackKind.TributeSummon)
+    val exodiaTrack = OstTracks.Exodia
+
     Dialog(onDismissRequest = onDismiss) {
         Box(
             modifier = Modifier
@@ -74,27 +85,24 @@ fun MusicSettingsDialog(
                 }
 
                 SectionLabel("Pack")
-                PackChipGrid(
-                    selected = settings.pack,
-                    onSelect = { onSettingsChange(settings.copy(pack = it)) },
+                ChipGrid(
+                    items = MusicPack.entries,
+                    isSelected = { it == settings.pack },
+                    label = { it.displayName },
+                    tint = { it.color },
+                    onClick = { onSettingsChange(settings.copy(pack = it)) },
                 )
 
                 if (settings.mode == MusicMode.Manual) {
                     SectionLabel("Track")
                     val loopingKinds = DmpTrackKind.entries.filter { !it.isOneShot }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(40.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        loopingKinds.forEach { kind ->
-                            Chip(
-                                text = kind.displayName,
-                                selected = settings.manualTrack == kind,
-                                onClick = { onSettingsChange(settings.copy(manualTrack = kind)) },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
+                    ChipGrid(
+                        items = loopingKinds,
+                        isSelected = { it == settings.manualTrack },
+                        label = { it.displayName },
+                        tint = { DuelColors.DuelGold },
+                        onClick = { onSettingsChange(settings.copy(manualTrack = it)) },
+                    )
                 }
 
                 SectionLabel("One-shots")
@@ -103,15 +111,23 @@ fun MusicSettingsDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     val packHasTribute = DmpAvailability.has(settings.pack, DmpTrackKind.TributeSummon)
-                    val tributeLabel = if (packHasTribute) "Tribute summon" else "Tribute summon (Joey)"
+                    val tributeLabel = if (packHasTribute) "Tribute summon" else "Tribute (Joey)"
                     OneShotButton(
                         label = tributeLabel,
-                        onClick = onPlayTributeSummon,
+                        active = activeOverlay?.cacheKey == tributeTrack.cacheKey,
+                        onClick = {
+                            if (activeOverlay?.cacheKey == tributeTrack.cacheKey) ost.stopOverlay()
+                            else ost.playOverlay(tributeTrack)
+                        },
                         modifier = Modifier.weight(1f),
                     )
                     OneShotButton(
                         label = "Exodia",
-                        onClick = onPlayExodia,
+                        active = activeOverlay?.cacheKey == exodiaTrack.cacheKey,
+                        onClick = {
+                            if (activeOverlay?.cacheKey == exodiaTrack.cacheKey) ost.stopOverlay()
+                            else ost.playOverlay(exodiaTrack)
+                        },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -140,19 +156,25 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun PackChipGrid(selected: MusicPack, onSelect: (MusicPack) -> Unit) {
-    val packs = MusicPack.entries
+private fun <T> ChipGrid(
+    items: List<T>,
+    isSelected: (T) -> Boolean,
+    label: (T) -> String,
+    tint: (T) -> Color,
+    onClick: (T) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        packs.chunked(2).forEach { row ->
+        items.chunked(2).forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                row.forEach { pack ->
-                    PackChip(
-                        pack = pack,
-                        selected = selected == pack,
-                        onClick = { onSelect(pack) },
+                row.forEach { item ->
+                    TintedChip(
+                        text = label(item),
+                        selected = isSelected(item),
+                        tint = tint(item),
+                        onClick = { onClick(item) },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -163,32 +185,39 @@ private fun PackChipGrid(selected: MusicPack, onSelect: (MusicPack) -> Unit) {
 }
 
 @Composable
-private fun PackChip(
-    pack: MusicPack,
+private fun TintedChip(
+    text: String,
     selected: Boolean,
+    tint: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
-            .height(40.dp)
+            .height(44.dp)
             .background(
-                color = if (selected) pack.color else pack.color.copy(alpha = 0.18f),
+                color = if (selected) tint else tint.copy(alpha = 0.18f),
                 shape = RoundedCornerShape(8.dp),
             )
             .border(
                 width = if (selected) 2.dp else 1.dp,
-                color = if (selected) DuelColors.DuelGoldGlow else pack.color,
+                color = if (selected) DuelColors.DuelGoldGlow else tint,
                 shape = RoundedCornerShape(8.dp),
             ),
         contentAlignment = Alignment.Center,
     ) {
-        TextButton(onClick = onClick, modifier = Modifier.matchParentSize(), contentPadding = PaddingValues(0.dp)) {
+        TextButton(
+            onClick = onClick,
+            modifier = Modifier.matchParentSize(),
+            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+        ) {
             Text(
-                pack.displayName,
+                text,
                 color = if (selected) Color.White else Color(0xFFEDE7FF),
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                 style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -228,22 +257,36 @@ private fun Chip(
 @Composable
 private fun OneShotButton(
     label: String,
+    active: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
             .height(44.dp)
-            .background(Color(0xFF120A33), RoundedCornerShape(8.dp))
-            .border(1.dp, DuelColors.DuelGold, RoundedCornerShape(8.dp)),
+            .background(
+                color = if (active) DuelColors.DuelGold else Color(0xFF120A33),
+                shape = RoundedCornerShape(8.dp),
+            )
+            .border(
+                width = if (active) 2.dp else 1.dp,
+                color = DuelColors.DuelGold,
+                shape = RoundedCornerShape(8.dp),
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        TextButton(onClick = onClick, modifier = Modifier.matchParentSize(), contentPadding = PaddingValues(0.dp)) {
+        TextButton(
+            onClick = onClick,
+            modifier = Modifier.matchParentSize(),
+            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+        ) {
             Text(
                 label,
-                color = DuelColors.DuelGoldGlow,
+                color = if (active) Color.Black else DuelColors.DuelGoldGlow,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

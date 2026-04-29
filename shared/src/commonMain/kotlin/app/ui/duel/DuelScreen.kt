@@ -14,11 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import app.audio.DmpTrackKind
 import app.audio.DuelOstPicker
@@ -269,10 +268,6 @@ fun DuelScreen(
         MusicSettingsDialog(
             settings = musicSettings,
             onSettingsChange = { musicSettings = it },
-            onPlayTributeSummon = {
-                ost.playOverlay(OstTracks.dmp(musicSettings.pack, DmpTrackKind.TributeSummon))
-            },
-            onPlayExodia = { ost.playOverlay(OstTracks.Exodia) },
             onDismiss = { showMusicDialog = false },
         )
     }
@@ -300,43 +295,65 @@ private fun CenterBar(onMusic: () -> Unit, onMisc: () -> Unit, onQuit: () -> Uni
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .height(56.dp)
             .background(Color(0xFF120A33))
             .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.5f)),
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 CenterIconButton(label = "♪", onClick = onMusic)
                 CenterIconButton(label = "✦", onClick = onMisc)
             }
-            Button(
-                onClick = onQuit,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Transparent,
-                    contentColor = DuelColors.Crimson,
-                ),
-                shape = CircleShape,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-            ) { Text("End duel", fontWeight = FontWeight.Bold) }
+            Box(
+                modifier = Modifier
+                    .height(40.dp)
+                    .background(Color(0xFF1A1140), RoundedCornerShape(10.dp))
+                    .border(1.dp, DuelColors.Crimson.copy(alpha = 0.7f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                TextButton(
+                    onClick = onQuit,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                ) {
+                    Text(
+                        "End",
+                        color = DuelColors.Crimson,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun CenterIconButton(label: String, onClick: () -> Unit) {
-    TextButton(
-        onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+    Box(
+        modifier = Modifier
+            .height(40.dp)
+            .background(Color(0xFF1A1140), RoundedCornerShape(10.dp))
+            .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.7f), RoundedCornerShape(10.dp)),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label,
-            color = DuelColors.DuelGoldGlow,
-            fontWeight = FontWeight.Bold,
-        )
+        TextButton(
+            onClick = onClick,
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+        ) {
+            Text(
+                label,
+                color = DuelColors.DuelGoldGlow,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+            )
+        }
     }
 }
 
@@ -356,11 +373,11 @@ private fun CustomAmountDialog(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF1A1140), androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                    .background(Color(0xFF1A1140), RoundedCornerShape(14.dp))
                     .border(
                         1.dp,
                         DuelColors.DuelGold.copy(alpha = 0.5f),
-                        androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                        RoundedCornerShape(14.dp),
                     )
                     .padding(20.dp),
             ) {

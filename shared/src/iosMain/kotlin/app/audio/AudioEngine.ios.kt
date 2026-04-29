@@ -46,6 +46,7 @@ actual class AudioEngine actual constructor() {
     private var loopEnabled: Boolean = false
     private var loadedKey: String? = null
     private var pendingVolume: Float = 1f
+    private var onCompleteCb: (() -> Unit)? = null
 
     init {
         runCatching {
@@ -87,6 +88,8 @@ actual class AudioEngine actual constructor() {
             if (loopEnabled) {
                 player.seekToTime(CMTimeMakeWithSeconds(0.0, 1))
                 player.play()
+            } else {
+                onCompleteCb?.invoke()
             }
         }
         loadedKey = cacheKey
@@ -105,6 +108,8 @@ actual class AudioEngine actual constructor() {
         pendingVolume = volume.coerceIn(0f, 1f)
         player.volume = pendingVolume
     }
+
+    actual fun setOnComplete(callback: (() -> Unit)?) { onCompleteCb = callback }
 
     actual fun seekTo(positionMs: Long) {
         player.seekToTime(CMTimeMakeWithSeconds(positionMs / 1000.0, 1000))

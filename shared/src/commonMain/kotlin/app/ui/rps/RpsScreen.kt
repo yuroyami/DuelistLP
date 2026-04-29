@@ -113,7 +113,7 @@ fun RpsScreen(
                 showReveal = phase != Phase.Picking,
                 resultBanner = bannerFor(result, isP1Side = false),
                 rotated = true,
-                onPick = { if (phase == Phase.Picking) p2Pick = it },
+                onPick = { if (phase == Phase.Picking && p2Pick == null) p2Pick = it },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
 
@@ -126,7 +126,7 @@ fun RpsScreen(
                 showReveal = phase != Phase.Picking,
                 resultBanner = bannerFor(result, isP1Side = true),
                 rotated = false,
-                onPick = { if (phase == Phase.Picking) p1Pick = it },
+                onPick = { if (phase == Phase.Picking && p1Pick == null) p1Pick = it },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }

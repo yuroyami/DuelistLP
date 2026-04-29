@@ -19,8 +19,15 @@ actual class AudioEngine actual constructor() {
 
     private val context: Context = AudioEngineContext.appContext
         ?: error("AudioEngine: AudioEngineContext.init(context) must be called first")
-    private val player: ExoPlayer = ExoPlayer.Builder(context).build()
+    private val player: ExoPlayer = ExoPlayer.Builder(context).build().also { p ->
+        p.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) onCompleteCb?.invoke()
+            }
+        })
+    }
     private var loadedKey: String? = null
+    private var onCompleteCb: (() -> Unit)? = null
 
     actual suspend fun load(bytes: ByteArray, cacheKey: String) = withContext(Dispatchers.IO) {
         if (cacheKey == loadedKey) return@withContext
@@ -50,6 +57,8 @@ actual class AudioEngine actual constructor() {
     actual fun setVolume(volume: Float) {
         player.volume = volume.coerceIn(0f, 1f)
     }
+
+    actual fun setOnComplete(callback: (() -> Unit)?) { onCompleteCb = callback }
 
     actual fun seekTo(positionMs: Long) { player.seekTo(positionMs.coerceAtLeast(0L)) }
 
