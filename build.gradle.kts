@@ -1,5 +1,5 @@
 plugins {
-    id("io.github.yuroyami.kmpssot") version "1.0.4"
+    id("io.github.yuroyami.kmpssot") version "1.1.0"
 
     alias(libs.plugins.kotlin.multiplatform).apply(false)
     alias(libs.plugins.kotlin.android).apply(false)
@@ -20,7 +20,13 @@ kmpSsot {
 
     sharedModule     = "shared"
     androidAppModule = "androidApp"
-    // No logo propagation here: launcher icons currently live in the platform
-    // trees as static files. Provide both `appLogoXml` and `appLogoPng` to
-    // make the plugin own them.
+
+    // Layered app logo — both PNGs are the full 108dp adaptive-icon canvas;
+    // foreground content lives inside the inner ~61% safe zone.
+    appLogoPngForeground = file("shared/src/commonMain/composeResources/drawable/yugilp-fg.png")
+    appLogoPngBackground = file("shared/src/commonMain/composeResources/drawable/yugilp-bg.png")
+
+    // Migration aid: removes drawable/ic_launcher.xml + values/ic_launcher_background.xml
+    // left over from the pre-FG/BG plugin pipeline. Safe to leave on.
+    cleanupLegacyLogoArtifacts = true
 }
