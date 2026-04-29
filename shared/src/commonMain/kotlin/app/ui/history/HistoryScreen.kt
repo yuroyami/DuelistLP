@@ -78,18 +78,11 @@ fun HistoryScreen(
 
         if (matches.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "No duels yet.",
-                        color = DuelColors.DuelGoldGlow.copy(alpha = 0.65f),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Your shadow games will appear here.",
-                        color = DuelColors.DuelGoldGlow.copy(alpha = 0.5f),
-                    )
-                }
+                Text(
+                    "No duels yet.",
+                    color = DuelColors.DuelGoldGlow.copy(alpha = 0.65f),
+                    style = MaterialTheme.typography.titleLarge,
+                )
             }
         } else {
             LazyColumn(
@@ -106,8 +99,8 @@ fun HistoryScreen(
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
             containerColor = Color(0xFF1A1140),
-            title = { Text("Clear all match history?", color = DuelColors.DuelGoldGlow) },
-            text = { Text("This permanently deletes every saved match.") },
+            title = { Text("Clear history?", color = DuelColors.DuelGoldGlow) },
+            text = { Text("Deletes every saved match.") },
             confirmButton = {
                 TextButton(onClick = {
                     showClearConfirm = false

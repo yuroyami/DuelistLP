@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -31,14 +31,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import app.audio.DmpTrackKind
 import app.audio.DuelOstPicker
 import app.audio.LocalLpSfx
 import app.audio.LocalOst
-import app.audio.OstController
+import app.audio.MusicMode
+import app.audio.MusicSettings
+import app.audio.OstTracks
 import app.model.DuelState
 import app.model.Match
 import app.model.MatchEvent
@@ -91,9 +96,15 @@ fun DuelScreen(
         )
     }
 
-    var showCustomFor by remember { mutableStateOf<((Int) -> Unit)?>(null) }
+    var showCustomFor by remember { mutableStateOf<CustomAmountRequest?>(null) }
     var showQuitConfirm by remember { mutableStateOf(false) }
+    var showMusicDialog by remember { mutableStateOf(false) }
+    var showMiscDialog by remember { mutableStateOf(false) }
     var actionsVisible by remember { mutableStateOf(false) }
+
+    var musicSettings by remember { mutableStateOf(MusicSettings()) }
+    var p1Infinite by remember { mutableStateOf(false) }
+    var p2Infinite by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val ost = LocalOst.current
@@ -102,6 +113,10 @@ fun DuelScreen(
 
     fun applyDelta(target: PlayerSlot, delta: Int) {
         if (state.isOver) return
+        val targetInfinite = (target == PlayerSlot.P1 && p1Infinite) ||
+            (target == PlayerSlot.P2 && p2Infinite)
+        if (targetInfinite) return
+
         val before = state.lpOf(target)
         val after = (before + delta).coerceAtLeast(0)
         if (after == before) return
@@ -110,7 +125,7 @@ fun DuelScreen(
         val newP1 = if (target == PlayerSlot.P1) after else state.p1Lp
         val newP2 = if (target == PlayerSlot.P2) after else state.p2Lp
         val winner = when {
-            newP1 == 0 && newP2 == 0 -> target.opposite() // tie-breaker: last surviving
+            newP1 == 0 && newP2 == 0 -> target.opposite()
             newP1 == 0 -> PlayerSlot.P2
             newP2 == 0 -> PlayerSlot.P1
             else -> null
@@ -129,8 +144,6 @@ fun DuelScreen(
             withChange
         }
 
-        // SFX: keep the loop alive while LP is rapidly changing, fall through to
-        // the resolution chord once it has been stable for a moment.
         lpSfx.onLpChange()
         stabilizeJob?.cancel()
         stabilizeJob = scope.launch {
@@ -139,24 +152,27 @@ fun DuelScreen(
         }
     }
 
-    // OST switching driven by the picker.
+    // OST switching driven by music settings + DuelOstPicker.
     val lastEvent = state.events.lastOrNull()
-    LaunchedEffect(state.p1Lp, state.p2Lp, state.winner, lastEvent) {
-        if (state.winner == null) {
-            ost.play(DuelOstPicker.pick(state.p1Lp, state.p2Lp, state.startingLp, lastEvent))
+    LaunchedEffect(state.p1Lp, state.p2Lp, state.winner, lastEvent, musicSettings) {
+        if (state.winner != null) return@LaunchedEffect
+        when (musicSettings.mode) {
+            MusicMode.Disabled -> ost.stop()
+            MusicMode.Manual -> ost.play(OstTracks.dmp(musicSettings.pack, musicSettings.manualTrack))
+            MusicMode.Auto -> {
+                val kind = DuelOstPicker.pick(state.p1Lp, state.p2Lp, state.startingLp, lastEvent)
+                ost.play(OstTracks.dmp(musicSettings.pack, kind))
+            }
         }
     }
 
     LaunchedEffect(state.winner) {
         state.winner ?: return@LaunchedEffect
-        // On victory, hand off to the match-end theme regardless of LP totals
-        // and stop the SFX loop immediately.
-        ost.play(OstController.Track.MatchEnd)
+        if (musicSettings.mode != MusicMode.Disabled) ost.play(OstTracks.MatchEnd)
         lpSfx.stabilize()
         stabilizeJob?.cancel()
         delay(1800)
         actionsVisible = true
-        // persist match
         scope.launch {
             store.saveMatch(state.toMatch(endedAtMs = Clock.System.now().toEpochMilliseconds()))
         }
@@ -178,11 +194,18 @@ fun DuelScreen(
                 onLpChange = ::applyDelta,
                 selfSlot = PlayerSlot.P2,
                 opponentSlot = PlayerSlot.P1,
-                onRequestCustomAmount = { commit -> showCustomFor = commit },
+                onRequestCustomAmount = { commit ->
+                    showCustomFor = CustomAmountRequest(commit, rotated = true)
+                },
+                isInfinite = p2Infinite,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
 
-            CenterBar(onQuit = { showQuitConfirm = true })
+            CenterBar(
+                onMusic = { showMusicDialog = true },
+                onMisc = { showMiscDialog = true },
+                onQuit = { showQuitConfirm = true },
+            )
 
             PlayerHalf(
                 playerName = state.player1,
@@ -193,7 +216,10 @@ fun DuelScreen(
                 onLpChange = ::applyDelta,
                 selfSlot = PlayerSlot.P1,
                 opponentSlot = PlayerSlot.P2,
-                onRequestCustomAmount = { commit -> showCustomFor = commit },
+                onRequestCustomAmount = { commit ->
+                    showCustomFor = CustomAmountRequest(commit, rotated = false)
+                },
+                isInfinite = p1Infinite,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
@@ -210,11 +236,12 @@ fun DuelScreen(
         }
     }
 
-    showCustomFor?.let { commit ->
+    showCustomFor?.let { req ->
         CustomAmountDialog(
+            rotated = req.rotated,
             onDismiss = { showCustomFor = null },
             onConfirm = { value ->
-                commit(value)
+                req.commit(value)
                 showCustomFor = null
             },
         )
@@ -224,7 +251,7 @@ fun DuelScreen(
         AlertDialog(
             onDismissRequest = { showQuitConfirm = false },
             title = { Text("End the duel?") },
-            text = { Text("Returns to setup. Current match will be saved if a winner has been declared.") },
+            text = { Text("Returns to setup. Match is saved if a winner exists.") },
             confirmButton = {
                 TextButton(onClick = {
                     showQuitConfirm = false
@@ -237,10 +264,39 @@ fun DuelScreen(
             containerColor = Color(0xFF1A1140),
         )
     }
+
+    if (showMusicDialog) {
+        MusicSettingsDialog(
+            settings = musicSettings,
+            onSettingsChange = { musicSettings = it },
+            onPlayTributeSummon = {
+                ost.playOverlay(OstTracks.dmp(musicSettings.pack, DmpTrackKind.TributeSummon))
+            },
+            onPlayExodia = { ost.playOverlay(OstTracks.Exodia) },
+            onDismiss = { showMusicDialog = false },
+        )
+    }
+
+    if (showMiscDialog) {
+        MiscDialog(
+            p1Name = state.player1,
+            p2Name = state.player2,
+            p1Infinite = p1Infinite,
+            p2Infinite = p2Infinite,
+            onP1InfiniteChange = { p1Infinite = it },
+            onP2InfiniteChange = { p2Infinite = it },
+            onDismiss = { showMiscDialog = false },
+        )
+    }
 }
 
+private data class CustomAmountRequest(
+    val commit: (Int) -> Unit,
+    val rotated: Boolean,
+)
+
 @Composable
-private fun CenterBar(onQuit: () -> Unit) {
+private fun CenterBar(onMusic: () -> Unit, onMisc: () -> Unit, onQuit: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -249,10 +305,14 @@ private fun CenterBar(onQuit: () -> Unit) {
             .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.5f)),
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CenterIconButton(label = "♪", onClick = onMusic)
+                CenterIconButton(label = "✦", onClick = onMisc)
+            }
             Button(
                 onClick = onQuit,
                 colors = ButtonDefaults.buttonColors(
@@ -260,40 +320,80 @@ private fun CenterBar(onQuit: () -> Unit) {
                     contentColor = DuelColors.Crimson,
                 ),
                 shape = CircleShape,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
             ) { Text("End duel", fontWeight = FontWeight.Bold) }
         }
     }
 }
 
 @Composable
-private fun CustomAmountDialog(onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
-    var text by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1A1140),
-        title = { Text("Custom step", color = DuelColors.DuelGoldGlow) },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { new -> text = new.filter { it.isDigit() }.take(6) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                placeholder = { Text("e.g. 250") },
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { (text.toIntOrNull() ?: 0).takeIf { it > 0 }?.let(onConfirm) ?: onDismiss() },
-            ) { Text("Set", color = DuelColors.DuelGoldGlow) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-    )
+private fun CenterIconButton(label: String, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+    ) {
+        Text(
+            label,
+            color = DuelColors.DuelGoldGlow,
+            fontWeight = FontWeight.Bold,
+        )
+    }
 }
 
-/** How long the LP must be stable before the SFX falls through to its resolution. */
+@Composable
+private fun CustomAmountDialog(
+    rotated: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (rotated) Modifier.rotate(180f) else Modifier),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF1A1140), androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                    .border(
+                        1.dp,
+                        DuelColors.DuelGold.copy(alpha = 0.5f),
+                        androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                    )
+                    .padding(20.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Custom step",
+                        color = DuelColors.DuelGoldGlow,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { new -> text = new.filter { it.isDigit() }.take(6) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        placeholder = { Text("e.g. 250") },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = onDismiss) { Text("Cancel") }
+                        TextButton(
+                            onClick = {
+                                (text.toIntOrNull() ?: 0).takeIf { it > 0 }?.let(onConfirm) ?: onDismiss()
+                            },
+                        ) { Text("Set", color = DuelColors.DuelGoldGlow) }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private const val STABILIZE_DELAY_MS = 320L
 
 private fun PlayerSlot.opposite(): PlayerSlot = if (this == PlayerSlot.P1) PlayerSlot.P2 else PlayerSlot.P1

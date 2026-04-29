@@ -97,7 +97,7 @@ fun SetupScreen(
                 strokeWidth = (titleSp / 28f).coerceAtLeast(1f).dp,
             )
             Text(
-                text = "It's time to d-d-d-d-duel!",
+                text = "Time to duel.",
                 color = DuelColors.DuelGoldGlow,
                 style = MaterialTheme.typography.titleMedium.copy(fontStyle = FontStyle.Italic),
                 textAlign = TextAlign.Center,
@@ -156,11 +156,11 @@ fun SetupScreen(
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(14.dp),
             ) {
-                Text("ENTER THE ARENA", style = MaterialTheme.typography.titleMedium)
+                Text("START", style = MaterialTheme.typography.titleMedium)
             }
 
             TextButton(onClick = onOpenHistory) {
-                Text("Match history", color = DuelColors.DuelGoldGlow)
+                Text("History", color = DuelColors.DuelGoldGlow)
             }
         }
     }

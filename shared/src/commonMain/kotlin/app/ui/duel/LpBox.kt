@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import app.resources.Res
 import app.resources.yugi_lp_bg
 import app.ui.components.AnimatedLifePoints
+import app.ui.components.StrokedText
 import app.ui.theme.DuelColors
 import app.ui.theme.lpDigitStyle
 import org.jetbrains.compose.resources.painterResource
@@ -34,12 +35,15 @@ import org.jetbrains.compose.resources.painterResource
  * The digit font size is computed from the box's actual measured size at
  * layout time, so the LP fits perfectly on a tiny iPhone XS or a tall iPad
  * without hand-tuning.
+ *
+ * When [isInfinite] is true, the digits are replaced with an "∞" glyph.
  */
 @Composable
 fun LpBox(
     value: Int,
     modifier: Modifier = Modifier,
     minDigits: Int = 4,
+    isInfinite: Boolean = false,
 ) {
     BoxWithConstraints(
         modifier = modifier
@@ -50,14 +54,11 @@ fun LpBox(
                 shape = RoundedCornerShape(12.dp),
             ),
     ) {
-        // Two stacked renderings: each gets ~half the box height after a small
-        // vertical inset for the rounded border + padding.
         val perHalfHeightDp = (maxHeight - VERTICAL_INSET_DP.dp) / 2
-        // ~70% of available half-height fits the glyph with descender room.
         val byHeight = (perHalfHeightDp.value * 0.70f)
-        // 4 italic digits + ~25% slant padding ≈ fontSize × digits × 0.62.
         val byWidth = maxWidth.value / (minDigits * 0.62f)
         val digitSp = minOf(byHeight, byWidth).toInt().coerceIn(MIN_DIGIT_SP, MAX_DIGIT_SP)
+        val infinitySp = (perHalfHeightDp.value * 0.85f).toInt().coerceIn(MIN_DIGIT_SP, MAX_DIGIT_SP + 20)
         val strokeDp = (digitSp / 28f).coerceAtLeast(1f).dp
 
         Image(
@@ -78,10 +79,12 @@ fun LpBox(
                     .graphicsLayer { rotationZ = 180f },
                 contentAlignment = Alignment.Center,
             ) {
-                AnimatedLifePoints(
+                LpInner(
                     value = value,
-                    style = lpDigitStyle(digitSp),
-                    strokeWidth = strokeDp,
+                    isInfinite = isInfinite,
+                    digitSp = digitSp,
+                    infinitySp = infinitySp,
+                    strokeDp = strokeDp,
                     minDigits = minDigits,
                 )
             }
@@ -90,14 +93,43 @@ fun LpBox(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
-                AnimatedLifePoints(
+                LpInner(
                     value = value,
-                    style = lpDigitStyle(digitSp),
-                    strokeWidth = strokeDp,
+                    isInfinite = isInfinite,
+                    digitSp = digitSp,
+                    infinitySp = infinitySp,
+                    strokeDp = strokeDp,
                     minDigits = minDigits,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LpInner(
+    value: Int,
+    isInfinite: Boolean,
+    digitSp: Int,
+    infinitySp: Int,
+    strokeDp: androidx.compose.ui.unit.Dp,
+    minDigits: Int,
+) {
+    if (isInfinite) {
+        StrokedText(
+            text = "∞",
+            style = lpDigitStyle(infinitySp),
+            fillColor = DuelColors.LpYellow,
+            strokeColor = DuelColors.LpStroke,
+            strokeWidth = strokeDp,
+        )
+    } else {
+        AnimatedLifePoints(
+            value = value,
+            style = lpDigitStyle(digitSp),
+            strokeWidth = strokeDp,
+            minDigits = minDigits,
+        )
     }
 }
 

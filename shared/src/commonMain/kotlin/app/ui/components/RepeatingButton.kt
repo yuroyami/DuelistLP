@@ -19,8 +19,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Tap once → fires [onTick] once.
- * Hold → fires [onTick] repeatedly, ramping from a slow initial cadence
- * down to a fast floor cadence the longer the press is held.
+ * Hold → fires [onTick] repeatedly at a steady cadence (no acceleration).
  *
  * The composable is intentionally "headless"; the caller supplies any visual
  * (background, label, icon) via [content].
@@ -39,19 +38,13 @@ fun RepeatingButton(
             if (!enabled) return@pointerInput
             detectTapGestures(
                 onPress = {
-                    // Spawn the tick loop as a child job and cancel it on release.
-                    // (detectTapGestures.onPress does NOT auto-cancel on release; if
-                    // we just delay-loop here it runs forever after a single tap.)
                     coroutineScope {
                         val tickJob = launch {
                             tickState.value.invoke()
                             delay(LONG_PRESS_THRESHOLD_MS)
-                            var interval = INITIAL_INTERVAL_MS
                             while (isActive) {
                                 tickState.value.invoke()
-                                delay(interval)
-                                interval = (interval - INTERVAL_STEP_MS)
-                                    .coerceAtLeast(MIN_INTERVAL_MS)
+                                delay(REPEAT_INTERVAL_MS)
                             }
                         }
                         try {
@@ -72,6 +65,4 @@ fun RepeatingButton(
 }
 
 private const val LONG_PRESS_THRESHOLD_MS = 320L
-private const val INITIAL_INTERVAL_MS = 180L
-private const val INTERVAL_STEP_MS = 12L
-private const val MIN_INTERVAL_MS = 35L
+private const val REPEAT_INTERVAL_MS = 100L

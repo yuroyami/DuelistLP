@@ -157,9 +157,9 @@ fun RpsScreen(
 
 private fun bannerFor(result: RpsOutcome?, isP1Side: Boolean): String? = when (result) {
     null -> null
-    RpsOutcome.TIE -> "TIE — REPLAY"
-    RpsOutcome.P1 -> if (isP1Side) "GOES FIRST" else "GOES SECOND"
-    RpsOutcome.P2 -> if (isP1Side) "GOES SECOND" else "GOES FIRST"
+    RpsOutcome.TIE -> "TIE"
+    RpsOutcome.P1 -> if (isP1Side) "FIRST" else "SECOND"
+    RpsOutcome.P2 -> if (isP1Side) "SECOND" else "FIRST"
 }
 
 @Composable
@@ -236,12 +236,12 @@ private fun RpsHalf(
                         strokeWidth = 2.dp,
                     )
                     myPick != null && !otherPicked -> Text(
-                        "Locked in. Waiting for opponent…",
+                        "Waiting for opponent…",
                         color = DuelColors.DuelGoldGlow.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center,
                     )
                     myPick == null -> Text(
-                        "Tap anywhere to pick — fast!",
+                        "Tap to pick",
                         color = DuelColors.DuelGoldGlow.copy(alpha = 0.6f),
                         style = MaterialTheme.typography.titleMedium,
                     )
@@ -349,7 +349,7 @@ private fun CenterDivider(countdown: Int, phase: Phase, rounds: Int) {
                 strokeWidth = 2.dp,
             )
             phase == Phase.Picking -> Text(
-                text = if (rounds == 1) "ROCK · PAPER · SCISSORS" else "ROUND $rounds — REPLAY",
+                text = if (rounds == 1) "ROCK · PAPER · SCISSORS" else "ROUND $rounds",
                 color = Color.Black,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             )

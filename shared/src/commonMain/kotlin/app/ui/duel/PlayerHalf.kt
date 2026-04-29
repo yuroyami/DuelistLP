@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,10 +35,10 @@ import app.ui.theme.DuelColors
 /**
  * One side of the dueling field. Contains:
  *  - Player name
- *  - LP box (yugi_lp_bg + animated digits)
+ *  - LP box (yugi_lp_bg + animated digits, or "∞" if infinite)
  *  - Target toggle (Self / Opponent)
- *  - Step selector (100 / 500 / 1000 / Custom)
- *  - Big − / + buttons (long-press to repeat with acceleration)
+ *  - Step selector (10 / 100 / 500 / 1000 / Custom)
+ *  - Big − / + buttons (long-press to repeat)
  */
 @Composable
 fun PlayerHalf(
@@ -52,7 +50,8 @@ fun PlayerHalf(
     onLpChange: (target: PlayerSlot, delta: Int) -> Unit,
     selfSlot: PlayerSlot,
     opponentSlot: PlayerSlot,
-    onRequestCustomAmount: ((commit: (Int) -> Unit) -> Unit),
+    onRequestCustomAmount: (commit: (Int) -> Unit) -> Unit,
+    isInfinite: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var targetSelf by remember { mutableStateOf(true) }
@@ -90,6 +89,7 @@ fun PlayerHalf(
 
             LpBox(
                 value = selfLp,
+                isInfinite = isInfinite,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = true),

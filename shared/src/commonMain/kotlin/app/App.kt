@@ -12,10 +12,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.audio.LocalLpSfx
 import app.audio.LocalOst
 import app.audio.LpSfxController
 import app.audio.OstController
+import app.audio.OstTracks
 import app.nav.Screen
 import app.persistence.DuelStoreFactory
 import app.ui.duel.DuelScreen
@@ -44,6 +48,20 @@ fun App() {
         }
     }
 
+    // Pause OST when the app goes into the background; resume on return.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> ost.pauseForBackground()
+                Lifecycle.Event.ON_RESUME -> ost.resumeFromBackground()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     var screen: Screen by remember { mutableStateOf(Screen.Setup) }
 
     // Play the right music for each non-duel screen. The Duel screen has
@@ -51,8 +69,8 @@ fun App() {
     LaunchedEffect(screen::class) {
         when (screen) {
             is Screen.Setup, is Screen.History, is Screen.MatchDetail ->
-                ost.play(OstController.Track.Main)
-            is Screen.Rps -> ost.play(OstController.Track.Rps)
+                ost.play(OstTracks.Main)
+            is Screen.Rps -> ost.play(OstTracks.Rps)
             is Screen.Duel -> { /* DuelScreen drives OST via DuelOstPicker */ }
         }
     }
