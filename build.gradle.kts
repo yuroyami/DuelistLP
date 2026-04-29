@@ -1,5 +1,5 @@
 plugins {
-    id("io.github.yuroyami.kmpssot") version "1.1.0"
+    id("io.github.yuroyami.kmpssot") version "1.2.0"
 
     alias(libs.plugins.kotlin.multiplatform).apply(false)
     alias(libs.plugins.kotlin.android).apply(false)
