@@ -5,11 +5,15 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
 
+/**
+ * iOS [DuelStoreFactory] actual. Resolves `Documents/` via NSFileManager and
+ * memoizes a single [DuelStore] (DataStore throws on second-creation against
+ * the same file).
+ */
 actual object DuelStoreFactory {
     private var instance: DuelStore? = null
 
     actual fun create(): DuelStore {
-        // Singleton: DataStore must be created at most once per file per process.
         instance?.let { return it }
         val docs: NSURL = NSFileManager.defaultManager.URLForDirectory(
             directory = NSDocumentDirectory,

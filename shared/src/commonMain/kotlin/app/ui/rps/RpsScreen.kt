@@ -61,8 +61,18 @@ import app.ui.theme.DuelColors
 import app.ui.theme.lpDigitStyle
 import kotlinx.coroutines.delay
 
+// Picking → Revealing (~250 ms hold so glyphs swap without a hard cut)
+//   → Result (winner shows BEGIN DUEL; tie auto-restarts after 800 ms)
 private enum class Phase { Picking, Revealing, Result }
 
+/**
+ * RPS first-player picker. Each side scrolls a horizontal marquee of glyphs
+ * at extreme speed; tap anywhere to lock a uniformly-random pick. Both sides
+ * picked → reveal → result. Ties auto-rematch with [rounds] incremented.
+ *
+ * Calls [onResolved] with the winner, both picks, and the round count when
+ * the user confirms BEGIN DUEL.
+ */
 @Composable
 fun RpsScreen(
     player1: String,
@@ -73,23 +83,20 @@ fun RpsScreen(
     var p2Pick by remember { mutableStateOf<RpsPick?>(null) }
     var phase by remember { mutableStateOf(Phase.Picking) }
     var rounds by remember { mutableStateOf(1) }
-    var countdown by remember { mutableStateOf(0) }
     var result by remember { mutableStateOf<RpsOutcome?>(null) }
 
     LaunchedEffect(p1Pick, p2Pick) {
         if (p1Pick != null && p2Pick != null && phase == Phase.Picking) {
             phase = Phase.Revealing
-            for (n in 3 downTo 1) {
-                countdown = n
-                delay(700)
-            }
-            countdown = 0
-            delay(180)
+            // Brief hold so the picker glyphs visibly swap to the reveal
+            // glyphs without a hard cut. No 3-2-1 countdown — both players
+            // have already committed by the time both picks land.
+            delay(REVEAL_FLASH_MS)
             val outcome = resolveRps(p1Pick!!, p2Pick!!)
             result = outcome
             phase = Phase.Result
             if (outcome == RpsOutcome.TIE) {
-                delay(1400)
+                delay(TIE_RESET_MS)
                 p1Pick = null
                 p2Pick = null
                 result = null
@@ -117,7 +124,7 @@ fun RpsScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
 
-            CenterDivider(countdown = countdown, phase = phase, rounds = rounds)
+            CenterDivider(phase = phase, rounds = rounds)
 
             RpsHalf(
                 playerName = player1,
@@ -253,9 +260,10 @@ private fun RpsHalf(
 }
 
 /**
- * Horizontal marquee of rock/paper/scissors emoji scrolling at extreme speed.
- * Tapping anywhere on the strip locks in a uniformly-random pick — the visual
- * blur makes it impossible to predict what you'll get, which is the point.
+ * Horizontal marquee of ✊✋✌ scrolling at 220 ms/cycle — too fast for the eye
+ * to anchor on any one glyph. Tap anywhere → uniformly-random pick. The blur
+ * is the whole point: it makes the pick feel committed-then-revealed rather
+ * than chosen.
  */
 @Composable
 private fun ShuffleMarquee(
@@ -332,7 +340,7 @@ private fun LockedCard(width: androidx.compose.ui.unit.Dp, height: androidx.comp
 }
 
 @Composable
-private fun CenterDivider(countdown: Int, phase: Phase, rounds: Int) {
+private fun CenterDivider(phase: Phase, rounds: Int) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -340,15 +348,8 @@ private fun CenterDivider(countdown: Int, phase: Phase, rounds: Int) {
             .background(Brush.horizontalGradient(listOf(Color.Transparent, DuelColors.DuelGold, Color.Transparent))),
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            countdown > 0 -> StrokedText(
-                text = countdown.toString(),
-                style = lpDigitStyle(56),
-                fillColor = DuelColors.LpYellow,
-                strokeColor = DuelColors.LpStroke,
-                strokeWidth = 2.dp,
-            )
-            phase == Phase.Picking -> Text(
+        when (phase) {
+            Phase.Picking -> Text(
                 text = if (rounds == 1) "ROCK · PAPER · SCISSORS" else "ROUND $rounds",
                 color = Color.Black,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -366,8 +367,8 @@ private fun RpsPick.glyph(): String = when (this) {
     RpsPick.SCISSORS -> "✌"
 }
 
-// One full cycle (3 items) scrolls past in 220 ms — fast enough that the eye
-// can't fix on any single glyph.
-private const val SHUFFLE_PERIOD_MS = 220
+private const val SHUFFLE_PERIOD_MS = 220       // One full 3-glyph cycle.
 private const val ITEM_WIDTH_DP = 96
-private const val MARQUEE_REPEATS = 30
+private const val MARQUEE_REPEATS = 30           // Wide enough to cover any phone width.
+private const val REVEAL_FLASH_MS = 250L         // Picker glyph → reveal glyph swap hold.
+private const val TIE_RESET_MS = 800L            // Pause to register the tie before re-spinning.

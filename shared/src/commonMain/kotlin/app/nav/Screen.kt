@@ -2,6 +2,12 @@ package app.nav
 
 import app.model.Match
 
+/**
+ * Navigation target. `App.kt` holds a single `mutableStateOf<Screen>` and
+ * switches the rendered composable on it — there is no nav library. Each
+ * branch carries the data it needs to construct its screen, so back-navigation
+ * is just `screen = Screen.Setup` with no stack restoration required.
+ */
 sealed interface Screen {
     data object Setup : Screen
 

@@ -14,6 +14,10 @@ import app.resources.heuristica_italic
 import app.resources.heuristica_regular
 import org.jetbrains.compose.resources.Font
 
+// Typography is the Heuristica family bundled in composeResources/font/.
+// LP digits use the italic-bold cut via [lpDigitStyle] for the inked-card-game
+// look. Body text uses the regular cut.
+
 @Composable
 fun heuristicaFamily(): FontFamily = FontFamily(
     Font(Res.font.heuristica_regular, FontWeight.Normal, FontStyle.Normal),
@@ -49,6 +53,7 @@ fun duelTypography(): Typography {
     )
 }
 
+/** The italic-bold cut used for LP digits, RPS reveal banners, and titles. */
 @Composable
 fun lpDigitStyle(fontSizeSp: Int): TextStyle = TextStyle(
     fontFamily = heuristicaItalicFamily(),

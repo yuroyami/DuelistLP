@@ -2,6 +2,14 @@ package app.persistence
 
 import android.content.Context
 
+/**
+ * Android [DuelStoreFactory] actual. [init] must be called from
+ * `AppActivity.onCreate` before [create] — DataStore needs the app Context to
+ * resolve `filesDir`.
+ *
+ * Singleton: DataStore throws `IllegalStateException` on second creation
+ * against the same file in one process.
+ */
 actual object DuelStoreFactory {
     private var appContext: Context? = null
 
@@ -12,8 +20,6 @@ actual object DuelStoreFactory {
     }
 
     actual fun create(): DuelStore {
-        // Singleton: DataStore must be created at most once per file per process,
-        // otherwise androidx.datastore throws IllegalStateException on second creation.
         instance?.let { return it }
         return synchronized(this) {
             instance ?: run {

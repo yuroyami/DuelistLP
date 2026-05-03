@@ -3,9 +3,9 @@ package app.audio
 import androidx.compose.ui.graphics.Color
 
 /**
- * In-duel music pack. Each pack has its own set of `dmp-<key>-<kind>.mp3`
- * files; if a pack is missing a particular [DmpTrackKind] entry, the resolver
- * falls back to [Joey] (the reference pack — every kind is guaranteed there).
+ * In-duel music pack. Each pack ships a `dmp-<key>-<kind>.mp3` file for most
+ * [DmpTrackKind]s. When a pack is missing a kind, the resolver in [OstTracks]
+ * falls back to [Joey] (the reference pack — guaranteed complete).
  */
 enum class MusicPack(
     val key: String,
@@ -21,9 +21,10 @@ enum class MusicPack(
 }
 
 /**
- * Kind of in-duel music. The first four are looping background tracks picked
- * automatically by [DuelOstPicker]; [TributeSummon] is a one-shot stinger
- * triggered manually from the music button.
+ * Per-pack track variants. In Auto mode the duel screen drives music through
+ * [OstEventScheduler] using [DuelAutoEvent] tracks instead — these per-pack
+ * DMP tracks are the Manual-mode menu and the source for the Tribute Summon
+ * one-shot stinger.
  */
 enum class DmpTrackKind(
     val fileSuffix: String,
@@ -37,24 +38,21 @@ enum class DmpTrackKind(
     TributeSummon("tribute-summon", "Tribute summon", isOneShot = true),
 }
 
-/** How the duel screen drives the OST. */
+/** How DuelScreen drives the OST. */
 enum class MusicMode(val displayName: String) {
-    Auto("Auto"),
-    Manual("Manual"),
-    Disabled("Off"),
+    Auto("Auto"),       // OstEventScheduler picks tracks based on LP state.
+    Manual("Manual"),   // User-pinned (pack, kind) plays on loop.
+    Disabled("Off"),    // Silent.
 }
 
-/** User-controllable music selection for the duel screen. */
+/** User-controllable selection from the Music popover. */
 data class MusicSettings(
     val mode: MusicMode = MusicMode.Auto,
     val pack: MusicPack = MusicPack.Joey,
     val manualTrack: DmpTrackKind = DmpTrackKind.NormalDuel,
 )
 
-/**
- * A resolved audio track — an opaque pair of (cache key, resource path) that
- * [OstController] can hand straight to the engine.
- */
+/** Resolved track — opaque (cacheKey, resourcePath) pair handed to the engine. */
 data class OstTrack(
     val cacheKey: String,
     val resourcePath: String,
@@ -63,15 +61,15 @@ data class OstTrack(
 
 /** App-default and miscellaneous tracks (always available, pack-agnostic). */
 object OstTracks {
-    val Main = OstTrack("ost-app-main", "files/ost/lp-main-theme.mp3", looping = true)
-    val Rps = OstTrack("ost-app-rps", "files/ost/lp-rockpaperscissors.mp3", looping = true)
-    val MatchEnd = OstTrack("ost-app-match-end", "files/ost/lp-match-end.mp3", looping = true)
+    val Main = OstTrack("ost-app-main", "files/sounds/lp-main-theme.mp3", looping = true)
+    val Rps = OstTrack("ost-app-rps", "files/sounds/lp-rockpaperscissors.mp3", looping = true)
+    val MatchEndWin = OstTrack("ost-app-match-end-win", "files/sounds/ingame-misc-matchend-win.mp3", looping = true)
+    val MatchEndDraw = OstTrack("ost-app-match-end-draw", "files/sounds/ingame-misc-matchend-draw.mp3", looping = true)
     val Exodia = OstTrack("ost-misc-exodia", "files/ost/misc-exodia.mp3", looping = false)
 
     /**
-     * Resolve the file for a (pack, kind) pair. Falls back to [MusicPack.Joey]
-     * when the requested pack does not ship that particular kind (currently
-     * only [DmpTrackKind.TributeSummon] is partial).
+     * Resolve the file for a (pack, kind) pair, falling back to [MusicPack.Joey]
+     * when [pack] doesn't ship that kind.
      */
     fun dmp(pack: MusicPack, kind: DmpTrackKind): OstTrack {
         val effective = if (DmpAvailability.has(pack, kind)) pack else MusicPack.Joey

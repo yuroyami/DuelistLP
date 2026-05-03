@@ -42,6 +42,11 @@ import app.util.formatDateTime
 import app.util.formatDuration
 import kotlinx.coroutines.launch
 
+/**
+ * Lazy list of saved matches (most-recent first), reactively driven from
+ * [DuelStore.matches]. Tap a row → [MatchDetailScreen]. Clear button trims
+ * the entire history (with confirm dialog).
+ */
 @Composable
 fun HistoryScreen(
     store: DuelStore,
@@ -116,9 +121,11 @@ fun HistoryScreen(
 
 @Composable
 private fun MatchRow(match: Match, onClick: () -> Unit) {
-    val winnerName = match.winner?.let {
-        if (it == PlayerSlot.P1) match.player1 else match.player2
-    } ?: "—"
+    val winnerName = when {
+        match.isDraw -> "Draw"
+        match.winner != null -> if (match.winner == PlayerSlot.P1) match.player1 else match.player2
+        else -> "—"
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()

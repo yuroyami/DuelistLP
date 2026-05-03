@@ -46,6 +46,14 @@ import app.ui.theme.DuelColors
 import app.ui.theme.lpDigitStyle
 import kotlinx.coroutines.launch
 
+/**
+ * Pre-duel screen: two name fields + starting-LP entry with preset chips.
+ * Hydrates names + LP from [store] on first composition (default "Player 1"
+ * / "Player 2" if persisted entries are blank). Persists on Start.
+ *
+ * Custom LP is allowed; the Start button is gated to LP ≥ 100 + non-blank
+ * names. Picking a preset chip just sets the text field — no separate state.
+ */
 @Composable
 fun SetupScreen(
     store: DuelStore,
@@ -76,9 +84,8 @@ fun SetupScreen(
             .padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // Scale the title font and the spacing to fit on a 5.8" iPhone XS as
-        // well as on a 6.7" iPhone Pro Max without overflowing or looking
-        // dwarfed.
+        // Title size + vertical rhythm scaled to viewport. Coerce keeps it
+        // legible on small iPhone XS and not dwarfed on large Pro Max.
         val titleSp = (maxWidth.value * 0.18f).toInt().coerceIn(48, 88)
         val verticalGap = (maxHeight.value * 0.025f).toInt().coerceIn(12, 22).dp
 

@@ -6,7 +6,13 @@ import androidx.activity.compose.setContent
 import app.audio.AudioEngineContext
 import app.persistence.DuelStoreFactory
 
-/** Single-activity host. All UI, state, and navigation live inside [App]. */
+/**
+ * Single-Activity Android host. All UI, state, and navigation live inside [App].
+ *
+ * MUST initialize the platform singletons ([DuelStoreFactory], [AudioEngineContext])
+ * with `applicationContext` BEFORE calling [setContent] — both fail at runtime
+ * with a clear error if not initialized first.
+ */
 class AppActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

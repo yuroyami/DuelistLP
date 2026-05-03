@@ -11,11 +11,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,21 +29,23 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import app.model.Outcome
 import app.model.PlayerSlot
 import app.ui.components.StrokedText
 import app.ui.theme.DuelColors
 import app.ui.theme.lpDigitStyle
 
 /**
- * Half-screen victory / defeat splash. Winner side glows gold and pulses with
- * "VICTORY", loser side dims and reads "DEFEAT". Buttons appear after a short
- * dramatic pause (handled by caller via [showActions]).
+ * Match-end splash. For [Outcome.Win], winner side pulses gold "VICTORY",
+ * loser dims to dark-red "DEFEAT". For [Outcome.Draw], both halves get the
+ * calmer "DRAW" banner. Action buttons (Rematch / Save & Exit) appear when
+ * caller flips [showActions] (DuelScreen does this ~1.8 s after game-end).
  */
 @Composable
 fun VictoryOverlay(
-    winner: PlayerSlot,
-    winnerName: String,
-    loserName: String,
+    outcome: Outcome,
+    p1Name: String,
+    p2Name: String,
     showActions: Boolean,
     onRematch: () -> Unit,
     onSaveAndExit: () -> Unit,
@@ -54,12 +54,10 @@ fun VictoryOverlay(
     Column(
         modifier = modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)),
     ) {
-        // Top half = P2 side; bottom half = P1 side. Rotate the P2 panel 180°
-        // so each player reads their result naturally when phone is between them.
-        VictoryHalf(
-            text = if (winner == PlayerSlot.P2) "VICTORY" else "DEFEAT",
-            playerName = if (winner == PlayerSlot.P2) winnerName else loserName,
-            isWinner = winner == PlayerSlot.P2,
+        OutcomeHalf(
+            outcome = outcome,
+            slot = PlayerSlot.P2,
+            playerName = p2Name,
             rotated = true,
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
@@ -94,10 +92,10 @@ fun VictoryOverlay(
             }
         }
 
-        VictoryHalf(
-            text = if (winner == PlayerSlot.P1) "VICTORY" else "DEFEAT",
-            playerName = if (winner == PlayerSlot.P1) winnerName else loserName,
-            isWinner = winner == PlayerSlot.P1,
+        OutcomeHalf(
+            outcome = outcome,
+            slot = PlayerSlot.P1,
+            playerName = p1Name,
             rotated = false,
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
@@ -105,14 +103,22 @@ fun VictoryOverlay(
 }
 
 @Composable
-private fun VictoryHalf(
-    text: String,
+private fun OutcomeHalf(
+    outcome: Outcome,
+    slot: PlayerSlot,
     playerName: String,
-    isWinner: Boolean,
     rotated: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val infinite = rememberInfiniteTransition(label = "victoryPulse")
+    val (text, role) = when (outcome) {
+        is Outcome.Win ->
+            if (outcome.winner == slot) "VICTORY" to HalfRole.Winner
+            else "DEFEAT" to HalfRole.Loser
+        Outcome.Draw -> "DRAW" to HalfRole.Drawn
+        Outcome.InProgress -> return
+    }
+
+    val infinite = rememberInfiniteTransition(label = "outcomePulse")
     val pulse by infinite.animateFloat(
         initialValue = 1f, targetValue = 1.06f,
         animationSpec = infiniteRepeatable(tween(900), repeatMode = RepeatMode.Reverse),
@@ -124,14 +130,16 @@ private fun VictoryHalf(
         label = "glow",
     )
 
-    val gradient = if (isWinner) {
-        Brush.radialGradient(
+    val gradient = when (role) {
+        HalfRole.Winner -> Brush.radialGradient(
             colors = listOf(DuelColors.DuelGold.copy(alpha = 0.55f), Color(0xFF120A33)),
             radius = 900f,
         )
-    } else {
-        Brush.verticalGradient(
+        HalfRole.Loser -> Brush.verticalGradient(
             listOf(Color(0xFF170B17), Color.Black),
+        )
+        HalfRole.Drawn -> Brush.verticalGradient(
+            listOf(Color(0xFF1F1A4A), Color(0xFF120A33)),
         )
     }
 
@@ -141,35 +149,48 @@ private fun VictoryHalf(
             .then(if (rotated) Modifier.rotate(180f) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        // Scale the banner text to fit the half. Height target is ~28% of the
-        // half's height; width target accounts for Heuristica bold-italic's
-        // glyph advance (~0.62 of fontSize) plus StrokedText's ~25% horizontal
-        // padding plus the stroke contribution on each side.
         val byHeight = maxHeight.value * 0.28f
         val widthDenom = 0.62f * text.length + 0.30f
         val byWidth = maxWidth.value / widthDenom
         val fitSp = minOf(byHeight, byWidth).coerceIn(20f, 96f)
-        val titleSp = (if (isWinner) fitSp else fitSp * 0.78f).toInt()
+        val isAnimated = role == HalfRole.Winner || role == HalfRole.Drawn
+        val titleSp = (if (isAnimated) fitSp else fitSp * 0.78f).toInt()
+
+        val fillColor = when (role) {
+            HalfRole.Winner -> DuelColors.LpYellow
+            HalfRole.Loser -> Color(0xFF8B0000)
+            HalfRole.Drawn -> DuelColors.DuelGoldGlow
+        }
+        val nameColor = when (role) {
+            HalfRole.Winner, HalfRole.Drawn -> DuelColors.DuelGoldGlow
+            HalfRole.Loser -> Color(0xFFA68585)
+        }
 
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(modifier = Modifier.scale(if (isWinner) pulse else 1f).alpha(if (isWinner) glow else 0.7f)) {
+            Box(
+                modifier = Modifier
+                    .scale(if (isAnimated) pulse else 1f)
+                    .alpha(if (isAnimated) glow else 0.7f),
+            ) {
                 StrokedText(
                     text = text,
                     style = lpDigitStyle(titleSp),
-                    fillColor = if (isWinner) DuelColors.LpYellow else Color(0xFF8B0000),
+                    fillColor = fillColor,
                     strokeColor = DuelColors.LpStroke,
                     strokeWidth = (titleSp / 28f).coerceAtLeast(1f).dp,
                 )
             }
             Text(
                 playerName,
-                color = if (isWinner) DuelColors.DuelGoldGlow else Color(0xFFA68585),
+                color = nameColor,
                 style = MaterialTheme.typography.titleMedium,
             )
             Spacer(Modifier.height(4.dp))
         }
     }
 }
+
+private enum class HalfRole { Winner, Loser, Drawn }

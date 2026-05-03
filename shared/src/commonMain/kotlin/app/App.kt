@@ -30,9 +30,15 @@ import app.ui.setup.SetupScreen
 import app.ui.theme.DuelTheme
 
 /**
- * Single root composable. Owns navigation state, the [DuelStoreFactory]
- * singleton, and the audio controllers ([OstController] for background
- * music, [LpSfxController] for the LP change SFX).
+ * App root. Owns:
+ *   - the [Screen] navigation state (single mutableStateOf — no nav library)
+ *   - app-singleton [DuelStoreFactory] for persistence
+ *   - app-singleton audio controllers ([OstController], [LpSfxController])
+ *
+ * Per-screen background music is set here for non-Duel screens; DuelScreen
+ * drives its own music via [app.audio.OstEventScheduler].
+ *
+ * Subscribes to lifecycle events to pause/resume music when backgrounded.
  */
 @Composable
 fun App() {
@@ -48,7 +54,7 @@ fun App() {
         }
     }
 
-    // Pause OST when the app goes into the background; resume on return.
+    // Pause OST on backgrounding, resume on foregrounding.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -64,14 +70,14 @@ fun App() {
 
     var screen: Screen by remember { mutableStateOf(Screen.Setup) }
 
-    // Play the right music for each non-duel screen. The Duel screen has
-    // dynamic OST switching (handled inside DuelScreen).
+    // Per-screen background music for non-Duel screens. DuelScreen owns its
+    // own music routing through OstEventScheduler.
     LaunchedEffect(screen::class) {
         when (screen) {
             is Screen.Setup, is Screen.History, is Screen.MatchDetail ->
                 ost.play(OstTracks.Main)
             is Screen.Rps -> ost.play(OstTracks.Rps)
-            is Screen.Duel -> { /* DuelScreen drives OST via DuelOstPicker */ }
+            is Screen.Duel -> { /* DuelScreen drives OST via OstEventScheduler */ }
         }
     }
 

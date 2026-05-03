@@ -12,6 +12,18 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import okio.Path.Companion.toPath
 
+/**
+ * Single DataStore Preferences file holding both the user's last-used
+ * [DuelSettings] AND the match history. Match list is JSON-encoded under one
+ * key — the data is small, fits in memory, and avoiding a separate Room/SQL
+ * dependency keeps the KMP setup minimal.
+ *
+ * Capped at [MAX_HISTORY] most-recent matches; older entries silently drop.
+ *
+ * Constructed via the platform [DuelStoreFactory] which handles the singleton
+ * requirement (DataStore throws if you create two stores against the same file
+ * within one process).
+ */
 class DuelStore internal constructor(filePath: String) {
 
     private val store: DataStore<Preferences> = PreferenceDataStoreFactory.createWithPath(
@@ -40,6 +52,11 @@ class DuelStore internal constructor(filePath: String) {
         }
     }
 
+    /**
+     * Insert (or replace by id) a match at the head of the history. Trims to
+     * [MAX_HISTORY]. The replace-by-id path supports re-saving a still-running
+     * match, though current callers only save once at duel end.
+     */
     suspend fun saveMatch(match: Match) {
         store.edit { prefs ->
             val current = prefs[Keys.matchesJson]?.let {
@@ -74,6 +91,12 @@ data class DuelSettings(
     val player2: String = "",
 )
 
+/**
+ * Platform factory. Android resolves against `applicationContext.filesDir`
+ * (initialized from `AppActivity.onCreate`); iOS resolves the user's
+ * `Documents/` directory via `NSFileManager`. Both produce a singleton store
+ * at [DuelStore.FILE_NAME].
+ */
 expect object DuelStoreFactory {
     fun create(): DuelStore
 }

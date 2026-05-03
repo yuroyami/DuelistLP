@@ -14,12 +14,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 
 /**
- * Two-pass text: a black stroke layer beneath, the colored fill on top.
- * Looks like the Yu-Gi-Oh anime LP digits.
- *
- * Adds a small font-size-proportional right padding so italic glyph slant
- * (which extends past the typeface's measured advance) isn't clipped by
- * surrounding `clipToBounds()` containers.
+ * Anime-style "inked" text — black stroke beneath, fill on top. Adds symmetric
+ * horizontal padding (~12% of font size) so the italic glyph's right-side
+ * slant overhang doesn't shift the layout box's center off the visual center
+ * — important for stacked rotated copies in [app.ui.duel.LpBox] to align.
  */
 @Composable
 fun StrokedText(
@@ -32,12 +30,11 @@ fun StrokedText(
 ) {
     val density = LocalDensity.current
     val widthPx = with(density) { strokeWidth.toPx() }
-    // ~20% of font size on the right for italic slant; ~5% on the left in case of
-    // glyphs that extend slightly to the left of their layout box.
-    val italicRightPad = with(density) { (style.fontSize.toPx() * 0.20f).toDp() }
-    val italicLeftPad = with(density) { (style.fontSize.toPx() * 0.05f).toDp() }
+    // Symmetric pad so the layout box's center matches the visual glyph
+    // center even when the right side has italic slant overhang.
+    val italicPad = with(density) { (style.fontSize.toPx() * 0.12f).toDp() }
     Box(
-        modifier = modifier.padding(start = italicLeftPad, end = italicRightPad),
+        modifier = modifier.padding(start = italicPad, end = italicPad),
     ) {
         Text(
             text = text,

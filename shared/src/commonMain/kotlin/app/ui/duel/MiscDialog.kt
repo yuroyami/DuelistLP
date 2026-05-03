@@ -27,9 +27,9 @@ import androidx.compose.ui.window.Dialog
 import app.ui.theme.DuelColors
 
 /**
- * Misc effects popover. Currently exposes a per-player infinite-LP toggle —
- * Sleepy 8 (∞), useful when a card effect grants unbeatable LP for a turn.
- * While on, the player's LP can't change and their card reads "∞".
+ * Misc effects popover. Currently: per-player infinite-LP toggle (∞). When
+ * on, the LP card renders ∞ instead of digits and the action region is
+ * disabled for that side.
  */
 @Composable
 fun MiscDialog(

@@ -32,10 +32,14 @@ import platform.Foundation.NSNotificationCenter
 import platform.Foundation.writeToFile
 
 /**
- * iOS AudioEngine — AVFoundation AVPlayer.
+ * iOS [AudioEngine] actual — AVFoundation `AVPlayer`.
  *
- * Looping is implemented via an `AVPlayerItemDidPlayToEndTime` notification
- * observer that seeks back to the start when looping is enabled.
+ * Looping is manual: subscribes to `AVPlayerItemDidPlayToEndTimeNotification`
+ * and seeks back to 0 + replays when looping is enabled, otherwise fires the
+ * completion callback. Configures `AVAudioSessionCategoryPlayback` so audio
+ * survives mixing / silent-switch.
+ *
+ * Resource bytes are written once to `~/Library/Caches/audio/<cacheKey>`.
  */
 @OptIn(ExperimentalForeignApi::class)
 actual class AudioEngine actual constructor() {
@@ -71,7 +75,7 @@ actual class AudioEngine actual constructor() {
             file
         }
         val url = NSURL.fileURLWithPath(filePath)
-        // Remove the previous end-observer (it was scoped to the old item).
+        // The end-observer was bound to the previous item; unhook before swap.
         endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         endObserver = null
 

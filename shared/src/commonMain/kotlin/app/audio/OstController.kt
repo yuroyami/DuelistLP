@@ -13,17 +13,21 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Owns the background-music [AudioEngine] (looping) and an [overlayEngine]
- * for one-shot stingers (Tribute Summon, Exodia). When an overlay plays the
- * looping track is paused; when the overlay ends or is cancelled, the
- * looping track resumes from where it left off.
+ * Background music + one-shot stinger orchestration.
  *
- * Track changes go through a [Mutex] so a fast-fired sequence of
- * `play(A); play(B); play(C)` resolves cleanly to "we are now playing C"
- * without earlier loads racing the engine into an inconsistent state.
+ * Two engines:
+ *   - [engine] — the looping track (currently playing background music)
+ *   - [overlayEngine] — one-shot stingers (Tribute Summon, Exodia)
  *
- * [currentOverlay] mirrors which overlay (if any) is currently playing —
- * the music settings dialog reads it to highlight the active stinger button.
+ * Track changes go through [mutex] so a fast `play(A); play(B); play(C)`
+ * collapses cleanly to "we're playing C" without earlier loads racing the
+ * engine into an inconsistent state.
+ *
+ * When an overlay plays, the loop pauses immediately on the calling thread
+ * (no audible delay) and resumes on overlay completion or cancellation.
+ *
+ * [pausedForLifecycle] and [pausedForOverlay] track the two reasons playback
+ * might be silenced; the loop only resumes when BOTH are false.
  */
 class OstController(private val scope: CoroutineScope) {
 
@@ -41,11 +45,16 @@ class OstController(private val scope: CoroutineScope) {
     private var overlayJob: Job? = null
 
     private val _currentOverlay = MutableStateFlow<OstTrack?>(null)
+    /** What overlay (if any) is currently playing. UI reads this to highlight buttons. */
     val currentOverlay: StateFlow<OstTrack?> = _currentOverlay.asStateFlow()
 
     private var pausedForLifecycle = false
     private var pausedForOverlay = false
 
+    /**
+     * Switch the looping track. Idempotent if already on [track]. Cancels any
+     * prior in-flight load so the latest call wins.
+     */
     fun play(track: OstTrack) {
         if (current?.cacheKey == track.cacheKey) return
         loadJob?.cancel()
@@ -73,14 +82,12 @@ class OstController(private val scope: CoroutineScope) {
     }
 
     /**
-     * Play a one-shot stinger over the looping track. The looping track is
-     * paused for the duration and resumes when the stinger ends (or is
-     * stopped/replaced via [stopOverlay] or another [playOverlay] call).
+     * Play a one-shot over the looping track. The loop pauses immediately on
+     * the calling thread and resumes when the overlay ends, is cancelled, or
+     * is replaced by another [playOverlay] call.
      */
     fun playOverlay(track: OstTrack) {
         overlayJob?.cancel()
-        // Pause the looping engine immediately on the calling thread so the
-        // bg goes silent right when the user taps.
         if (!pausedForOverlay) {
             pausedForOverlay = true
             engine.pause()
@@ -143,14 +150,14 @@ class OstController(private val scope: CoroutineScope) {
         pausedForOverlay = false
     }
 
-    /** Pause everything when the app goes into the background. */
+    /** Called from App.kt on Lifecycle.ON_PAUSE / ON_STOP. */
     fun pauseForBackground() {
         pausedForLifecycle = true
         engine.pause()
         overlayEngine.pause()
     }
 
-    /** Resume the looping (or overlay) track when the app returns to the foreground. */
+    /** Called from App.kt on Lifecycle.ON_RESUME. */
     fun resumeFromBackground() {
         pausedForLifecycle = false
         if (_currentOverlay.value != null) {

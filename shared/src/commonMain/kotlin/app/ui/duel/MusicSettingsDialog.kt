@@ -34,12 +34,13 @@ import app.audio.OstTracks
 import app.ui.theme.DuelColors
 
 /**
- * Music settings popover. Three sections:
- *  1. Mode (Auto / Manual / Off)
- *  2. Pack chips (each tinted with the pack's signature color)
- *  3. One-shot stingers (Tribute Summon for active pack, plus Exodia).
- *     Tap to play; tap again (while it's playing) to stop. The button shows
- *     a highlighted state for the duration of the stinger.
+ * Music popover. Sections:
+ *   1. Mode chips (Auto / Manual / Off)
+ *   2. Pack chips (six, each tinted with that pack's signature color)
+ *   3. Track chips (Manual mode only — picks the looping kind)
+ *   4. One-shots row (Tribute Summon for current pack + Exodia). Tap to
+ *      play; tap again while playing to stop. Highlighted while active —
+ *      driven by the [LocalOst] currentOverlay StateFlow.
  */
 @Composable
 fun MusicSettingsDialog(

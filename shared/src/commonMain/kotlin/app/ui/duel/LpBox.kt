@@ -2,7 +2,6 @@ package app.ui.duel
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -17,6 +16,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.resources.Res
 import app.resources.yugi_lp_bg
 import app.ui.components.AnimatedLifePoints
@@ -26,24 +26,23 @@ import app.ui.theme.lpDigitStyle
 import org.jetbrains.compose.resources.painterResource
 
 /**
- * The signature LP card: blurred-spiral webp background, golden border, and
- * two vertically-mirrored copies of the same LP value rendered inside the
- * same canvas — top rotated 180°, bottom upright — so two players sitting
- * across a table each read it head-on, like the mirror-printed lettering on
- * an ambulance hood.
+ * LP card. Background webp + golden border + two stacked copies of the LP:
+ *   - top: rotated 180°, half size — the inline mirror for the opponent
+ *   - bottom: upright, full size — the player's main read
  *
- * The digit font size is computed from the box's actual measured size at
- * layout time, so the LP fits perfectly on a tiny iPhone XS or a tall iPad
- * without hand-tuning.
- *
- * When [isInfinite] is true, the digits are replaced with an "∞" glyph.
+ * Digit font sizes are computed from the measured box at layout so the card
+ * fits any device without hand-tuning. When [isInfinite] is true, a single
+ * ∞ glyph is drawn instead (rotating ∞ 180° is a no-op so the mirror is
+ * redundant).
  */
 @Composable
 fun LpBox(
     value: Int,
     modifier: Modifier = Modifier,
-    minDigits: Int = 4,
+    minDigits: Int = 5,
     isInfinite: Boolean = false,
+    durationMs: Int = 360,
+    stepMagnitude: Int = 0,
 ) {
     BoxWithConstraints(
         modifier = modifier
@@ -54,13 +53,6 @@ fun LpBox(
                 shape = RoundedCornerShape(12.dp),
             ),
     ) {
-        val perHalfHeightDp = (maxHeight - VERTICAL_INSET_DP.dp) / 2
-        val byHeight = (perHalfHeightDp.value * 0.70f)
-        val byWidth = maxWidth.value / (minDigits * 0.62f)
-        val digitSp = minOf(byHeight, byWidth).toInt().coerceIn(MIN_DIGIT_SP, MAX_DIGIT_SP)
-        val infinitySp = (perHalfHeightDp.value * 0.85f).toInt().coerceIn(MIN_DIGIT_SP, MAX_DIGIT_SP + 20)
-        val strokeDp = (digitSp / 28f).coerceAtLeast(1f).dp
-
         Image(
             painter = painterResource(Res.drawable.yugi_lp_bg),
             contentDescription = null,
@@ -68,71 +60,98 @@ fun LpBox(
             modifier = Modifier.fillMaxSize(),
         )
 
-        Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            // Top reading: rotated 180° for the player across the table.
+        if (isInfinite) {
+            val byHeight = (maxHeight - VERTICAL_INSET_DP.dp).value * 0.85f
+            val byWidth = maxWidth.value * 0.55f
+            val infinitySp = minOf(byHeight, byWidth).toInt().coerceIn(MIN_DIGIT_SP, INFINITY_MAX_SP)
+            val strokeDp = (infinitySp / 28f).coerceAtLeast(1f).dp
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer { rotationZ = 180f },
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                LpInner(
-                    value = value,
-                    isInfinite = isInfinite,
-                    digitSp = digitSp,
-                    infinitySp = infinitySp,
-                    strokeDp = strokeDp,
-                    minDigits = minDigits,
+                StrokedText(
+                    text = "∞",
+                    style = lpDigitStyle(infinitySp),
+                    fillColor = DuelColors.LpYellow,
+                    strokeColor = DuelColors.LpStroke,
+                    strokeWidth = strokeDp,
                 )
             }
-            // Bottom reading: upright, for the player on the near side.
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                LpInner(
-                    value = value,
-                    isInfinite = isInfinite,
-                    digitSp = digitSp,
-                    infinitySp = infinitySp,
-                    strokeDp = strokeDp,
-                    minDigits = minDigits,
-                )
+        } else {
+            // Each half gets exactly half the height. Mirror is half the
+            // font size of main, sharing a common visual midline through
+            // the card's geometric center.
+            val perHalfHeight = (maxHeight - VERTICAL_INSET_DP.dp) / 2
+            val byHeight = perHalfHeight.value * 0.78f
+            val byWidth = maxWidth.value / (minDigits * 0.62f)
+            val digitSpBottom = minOf(byHeight, byWidth).toInt().coerceIn(MIN_DIGIT_SP, MAX_DIGIT_SP)
+            val strokeDpBottom = (digitSpBottom / 28f).coerceAtLeast(1f).dp
+            val digitSpTop = (digitSpBottom / 2).coerceAtLeast(MIN_OPPONENT_SP)
+            val strokeDpTop = (digitSpTop / 28f).coerceAtLeast(0.5f).dp
+
+            // Heuristica italic overhangs past the natural advance on the
+            // trailing edge. Without compensation, a centered Row of digits
+            // paints visually shifted toward the slant direction. The
+            // translationX below shifts the upright copy LEFT and the
+            // 180°-rotated copy RIGHT (rotation flips the X direction inside
+            // the graphics layer) by the same magnitude, so both visual
+            // centers land on the card's vertical midline.
+            val correctionFactor = ITALIC_VISUAL_OFFSET_FACTOR
+
+            Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier.graphicsLayer {
+                            rotationZ = 180f
+                            translationX = (digitSpTop * correctionFactor).sp.toPx()
+                        },
+                    ) {
+                        AnimatedLifePoints(
+                            value = value,
+                            style = lpDigitStyle(digitSpTop),
+                            strokeWidth = strokeDpTop,
+                            durationMs = durationMs,
+                            stepMagnitude = stepMagnitude,
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier.graphicsLayer {
+                            translationX = -(digitSpBottom * correctionFactor).sp.toPx()
+                        },
+                    ) {
+                        AnimatedLifePoints(
+                            value = value,
+                            style = lpDigitStyle(digitSpBottom),
+                            strokeWidth = strokeDpBottom,
+                            durationMs = durationMs,
+                            stepMagnitude = stepMagnitude,
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-@Composable
-private fun LpInner(
-    value: Int,
-    isInfinite: Boolean,
-    digitSp: Int,
-    infinitySp: Int,
-    strokeDp: androidx.compose.ui.unit.Dp,
-    minDigits: Int,
-) {
-    if (isInfinite) {
-        StrokedText(
-            text = "∞",
-            style = lpDigitStyle(infinitySp),
-            fillColor = DuelColors.LpYellow,
-            strokeColor = DuelColors.LpStroke,
-            strokeWidth = strokeDp,
-        )
-    } else {
-        AnimatedLifePoints(
-            value = value,
-            style = lpDigitStyle(digitSp),
-            strokeWidth = strokeDp,
-            minDigits = minDigits,
-        )
-    }
-}
-
 private const val MIN_DIGIT_SP = 24
-private const val MAX_DIGIT_SP = 80
+private const val MAX_DIGIT_SP = 88
+private const val MIN_OPPONENT_SP = 12
+private const val INFINITY_MAX_SP = 130
 private const val VERTICAL_INSET_DP = 12   // border + column padding
+
+// Half of Heuristica italic's right-overhang as a fraction of font size.
+// Empirically tuned: italic slant pushes the visual ~12% past the natural
+// advance; halving that recenters the layout box on the visual glyph.
+private const val ITALIC_VISUAL_OFFSET_FACTOR = 0.06f

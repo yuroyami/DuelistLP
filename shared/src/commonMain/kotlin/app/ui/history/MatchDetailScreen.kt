@@ -36,6 +36,12 @@ import app.util.formatClockTime
 import app.util.formatDateTime
 import app.util.formatDuration
 
+/**
+ * Replay view for one saved [Match]. Header shows participants + final LP +
+ * duration; the lazy list under it walks every [MatchEvent] in chronological
+ * order with per-event color (crimson for damage, emerald for heal, gold for
+ * meta events).
+ */
 @Composable
 fun MatchDetailScreen(match: Match, onBack: () -> Unit) {
     Column(
@@ -82,7 +88,11 @@ fun MatchDetailScreen(match: Match, onBack: () -> Unit) {
 
 @Composable
 private fun Header(match: Match) {
-    val winnerName = match.winner?.let { if (it == PlayerSlot.P1) match.player1 else match.player2 } ?: "—"
+    val winnerLabel = when {
+        match.isDraw -> "Draw"
+        match.winner != null -> if (match.winner == PlayerSlot.P1) match.player1 else match.player2
+        else -> "—"
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -99,7 +109,7 @@ private fun Header(match: Match) {
             )
             Text("Starting LP: ${match.startingLp}", color = Color(0xFFEDE7FF))
             Text(
-                "Final: ${match.finalP1Lp} – ${match.finalP2Lp}  · Winner: $winnerName",
+                "Final: ${match.finalP1Lp} – ${match.finalP2Lp}  · ${if (match.isDraw) "Result" else "Winner"}: $winnerLabel",
                 color = DuelColors.DuelGoldGlow,
             )
             Text(
@@ -157,5 +167,10 @@ private fun describeEvent(event: MatchEvent, match: Match): Triple<String, Strin
         val w = if (event.winner == PlayerSlot.P1) match.player1 else match.player2
         Triple("VICTORY: $w", "Match ends.", DuelColors.LpYellow)
     }
+    is MatchEvent.Draw -> Triple(
+        "DRAW",
+        "Both players hit 0 LP — match ends in a draw.",
+        DuelColors.DuelGoldGlow,
+    )
 }
 

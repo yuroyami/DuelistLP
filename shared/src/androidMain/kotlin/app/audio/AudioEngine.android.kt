@@ -9,11 +9,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Android AudioEngine — Media3 ExoPlayer (audio-only).
+ * Android [AudioEngine] actual — Media3 ExoPlayer (audio-only).
  *
- * Resource bytes are written once to the app cache directory under their
- * [cacheKey] filename, then handed to ExoPlayer as a `file://` MediaItem.
- * Subsequent loads with the same key skip the disk write.
+ * Resource bytes are written once to `cacheDir/audio/<cacheKey>` and loaded
+ * as a `file://` MediaItem. Same key + same byte length on a later [load]
+ * skips the disk write.
+ *
+ * Requires [AudioEngineContext.init] to have been called from `AppActivity`.
  */
 actual class AudioEngine actual constructor() {
 
@@ -71,7 +73,7 @@ actual class AudioEngine actual constructor() {
     }
 }
 
-/** Process-wide app context holder for [AudioEngine]. Set from [app.AppActivity]. */
+/** Process-wide context holder for [AudioEngine]. Initialized from `AppActivity.onCreate`. */
 object AudioEngineContext {
     @Volatile var appContext: Context? = null
         private set

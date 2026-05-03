@@ -4,6 +4,9 @@ import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
+// Display-only formatters for the history screen. No locale awareness — the
+// app is dark-only and English-only by design.
+
 fun formatDateTime(epochMillis: Long): String {
     val ldt = Instant.fromEpochMilliseconds(epochMillis).toLocalDateTime(TimeZone.currentSystemDefault())
     @Suppress("DEPRECATION")
