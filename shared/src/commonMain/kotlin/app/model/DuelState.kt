@@ -23,6 +23,8 @@ data class DuelState(
     val currentTurn: PlayerSlot = firstPlayer,
     /** Increments on each turn flip. Drives the "Turn N" label only. */
     val turnNumber: Int = 1,
+    /** Current phase within the active turn. Resets to DrawPhase on each turn flip. */
+    val currentPhase: DuelPhase = DuelPhase.DrawPhase,
 ) {
     fun lpOf(slot: PlayerSlot): Int = when (slot) {
         PlayerSlot.P1 -> p1Lp

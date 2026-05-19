@@ -1,7 +1,7 @@
 package app.ui.duel
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,8 +28,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,14 +41,16 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import app.model.DuelPhase
+import app.ui.components.AnimatedLifePoints
 import app.ui.theme.DuelColors
-import kotlinx.coroutines.launch
+import app.ui.theme.DuelTheme
+import app.ui.theme.lpDigitStyle
 
 /**
- * One staged action in the buffer. [value] is always > 0; sign at resolution
- * is determined by [mode] (ATTACK damages opponent, HEAL restores self,
- * SACRIFICE damages self).
+ * One staged action in the buffer. [value] is always > 0; sign and target at
+ * resolution come from [mode] (DamageOpponent / HealOpponent / HealSelf /
+ * DamageSelf).
  */
 data class StagedAction(
     val mode: LpActionMode,
@@ -55,36 +59,40 @@ data class StagedAction(
 
 /**
  * Active player's full half. Top-to-bottom:
- *   name + FIRST badge → buffer slot (only when [bufferEnabled]) →
- *   LP card (LpBox) → End {Name}'s Turn button → action panels.
+ *   Name row + FIRST badge (with opponent LP read on the trailing edge) →
+ *   Phase tracker bar → buffer slot (conditional) → LP card (single centred
+ *   value) → Next Phase + End Turn row → action panels (2×2) →
+ *   bottom row: BufferModeToggle + OneShotWheelButton.
  *
- * Buffer slot only reserves space when [bufferEnabled] is true. In auto-commit
- * mode the buffer is always empty, so reserving the slot would just waste
- * vertical space.
+ * All spacing, sizing, and text scales come from [DuelTheme.dimens] so the
+ * layout adapts to phones and tablets without hand-tuning.
  *
- * The whole half is rotated 180° as a unit when [rotated] is true (P2's side),
- * so all gesture coordinates and gauge orientation work in the half's local
- * frame — no per-child rotation needed downstream.
- *
- * End Turn lives between the LP card and the action region: each player ends
- * their own turn from inside their own half.
+ * The whole half is rotated 180° as a unit when [rotated] is true (P2's side).
  */
 @Composable
 fun PlayerHalf(
     playerName: String,
     selfLp: Int,
+    opponentName: String,
+    opponentLp: Int,
+    opponentIsInfinite: Boolean,
     showFirstBadge: Boolean,
     rotated: Boolean,
     onStageAction: (StagedAction) -> Unit,
     onTapForValue: (LpActionMode) -> Unit,
     bufferedActions: List<StagedAction>,
     bufferEnabled: Boolean,
+    onBufferModeChange: (Boolean) -> Unit,
     onCommitBuffer: () -> Unit,
     onUndoBuffer: () -> Unit,
     onClearBuffer: () -> Unit,
     onWheelStateChange: (LpWheelState?) -> Unit,
     onEndTurn: () -> Unit,
     endTurnEnabled: Boolean,
+    onOpenOneShotWheel: () -> Unit,
+    currentPhase: DuelPhase,
+    onAdvancePhase: () -> Unit,
+    turnNumber: Int,
     isInfinite: Boolean,
     actionsEnabled: Boolean,
     wheelMax: Int,
@@ -94,45 +102,65 @@ fun PlayerHalf(
     onFloatingDeltaComplete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val d = DuelTheme.dimens
     Box(
         modifier = modifier.then(if (rotated) Modifier.rotate(180f) else Modifier),
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = d.s14, vertical = d.s8),
+            verticalArrangement = Arrangement.spacedBy(d.s6),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // Top row: player name + FIRST badge | opponent name + LP value.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = playerName,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = DuelColors.DuelGoldGlow,
-                    modifier = Modifier.padding(start = 4.dp),
-                )
-                if (showFirstBadge) {
-                    Box(
-                        modifier = Modifier
-                            .background(DuelColors.DuelGold, RoundedCornerShape(50))
-                            .padding(horizontal = 10.dp, vertical = 3.dp),
-                    ) {
-                        Text("FIRST", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(d.s8),
+                ) {
+                    Text(
+                        text = playerName,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = DuelColors.DuelGoldGlow,
+                        modifier = Modifier.padding(start = d.s4),
+                    )
+                    if (showFirstBadge) {
+                        Box(
+                            modifier = Modifier
+                                .background(DuelColors.DuelGold, RoundedCornerShape(d.radiusPill))
+                                .padding(horizontal = d.s10, vertical = d.s2),
+                        ) {
+                            Text(
+                                "FIRST",
+                                color = Color.Black,
+                                fontSize = d.textTiny,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                     }
                 }
+                OpponentLpReadout(
+                    opponentName = opponentName,
+                    opponentLp = opponentLp,
+                    isInfinite = opponentIsInfinite,
+                    animationDurationMs = animationDurationMs,
+                )
             }
 
-            // Buffer slot. Only reserved when bufferEnabled — auto-commit
-            // never queues, so the strip would always be empty there. Slot
-            // height is fixed when reserved so the LP card doesn't shift as
-            // entries come and go.
+            // Phase tracker.
+            PhaseTracker(currentPhase = currentPhase, modifier = Modifier.fillMaxWidth())
+
+            // Buffer slot (conditional).
             if (bufferEnabled) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(BUFFER_STRIP_SLOT_HEIGHT_DP.dp),
+                        .height(d.bufferStripHeight),
                 ) {
                     if (bufferedActions.isNotEmpty()) {
                         BufferStrip(
@@ -147,9 +175,8 @@ fun PlayerHalf(
                 }
             }
 
-            // LP card gets ~60% of remaining vertical, action region ~40%.
-            // End Turn slots in between as a fixed-height button.
-            Box(modifier = Modifier.fillMaxWidth().weight(1.5f, fill = true)) {
+            // LP card — smaller weight than before so opp row + phase tracker fit.
+            Box(modifier = Modifier.fillMaxWidth().weight(1.2f, fill = true)) {
                 LpBox(
                     value = selfLp,
                     isInfinite = isInfinite,
@@ -165,14 +192,27 @@ fun PlayerHalf(
                 }
             }
 
-            SwipeToEndTurn(
-                playerName = playerName,
-                enabled = endTurnEnabled,
-                onEndTurn = onEndTurn,
+            // Phase advance + end-turn row.
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(END_TURN_HEIGHT_DP.dp),
-            )
+                    .height(d.endTurnRowHeight),
+                horizontalArrangement = Arrangement.spacedBy(d.s8),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NextPhaseButton(
+                    phase = currentPhase,
+                    enabled = currentPhase != DuelPhase.EndPhase,
+                    onClick = onAdvancePhase,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+                SwipeToEndTurn(
+                    playerName = playerName,
+                    enabled = endTurnEnabled,
+                    onEndTurn = onEndTurn,
+                    modifier = Modifier.weight(1.2f).fillMaxHeight(),
+                )
+            }
 
             Box(modifier = Modifier.fillMaxWidth().weight(1f, fill = true)) {
                 LpActionRegion(
@@ -184,15 +224,208 @@ fun PlayerHalf(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(d.bottomRowHeight),
+                horizontalArrangement = Arrangement.spacedBy(d.s8),
+            ) {
+                BufferModeToggle(
+                    enabled = bufferEnabled,
+                    turnNumber = turnNumber,
+                    onChange = onBufferModeChange,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+                OneShotWheelButton(
+                    onClick = onOpenOneShotWheel,
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(d.bottomRowHeight),
+                )
+            }
         }
     }
 }
 
 /**
- * Swipe-to-confirm End Turn slider. Drag the gold thumb across the track to
- * commit; release before the threshold ([SWIPE_THRESHOLD]) and the thumb
- * snaps back. Prevents the misclick risk of a tap button for an irreversible
- * turn-flip action.
+ * Compact "OPP — NAME — 6500" readout shown to the right of the active
+ * player's name. Lets the active player monitor their foe's LP without
+ * lifting their head to read the rotated opponent peek across the table.
+ */
+@Composable
+private fun OpponentLpReadout(
+    opponentName: String,
+    opponentLp: Int,
+    isInfinite: Boolean,
+    animationDurationMs: Int,
+) {
+    val d = DuelTheme.dimens
+    Row(
+        modifier = Modifier
+            .height(d.touchSm.coerceAtMost(d.s32 + d.s8))
+            .background(Color(0xFF120A33), RoundedCornerShape(d.radiusMd))
+            .border(d.borderHairline, DuelColors.Crimson.copy(alpha = 0.65f), RoundedCornerShape(d.radiusMd))
+            .padding(horizontal = d.s10),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(d.s8),
+    ) {
+        Text(
+            text = "OPP",
+            color = DuelColors.Crimson.copy(alpha = 0.85f),
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = d.textMicro,
+            letterSpacing = d.trackWide,
+        )
+        Text(
+            text = opponentName,
+            color = DuelColors.DuelGoldGlow.copy(alpha = 0.85f),
+            fontWeight = FontWeight.SemiBold,
+            fontSize = d.textTiny,
+            maxLines = 1,
+        )
+        if (isInfinite) {
+            Text(
+                text = "∞",
+                color = DuelColors.LpYellow,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = d.textReadout,
+            )
+        } else {
+            AnimatedLifePoints(
+                value = opponentLp,
+                style = lpDigitStyle((d.textReadout.value).toInt().coerceAtLeast(14)),
+                strokeWidth = d.borderHairline,
+                durationMs = animationDurationMs,
+            )
+        }
+    }
+}
+
+/**
+ * "Next Phase ▶" button — disabled on End Phase (player must use End Turn).
+ * Tints itself with the COMING phase's color for a forward-looking feel.
+ */
+@Composable
+private fun NextPhaseButton(
+    phase: DuelPhase,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val d = DuelTheme.dimens
+    val nextPhase = phase.next()
+    val accent = if (nextPhase != null) phaseAccent(nextPhase) else DuelColors.DuelGold.copy(alpha = 0.4f)
+    val glow = if (nextPhase != null) phaseGlow(nextPhase) else DuelColors.DuelGoldGlow.copy(alpha = 0.4f)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(d.radiusMd))
+            .background(
+                if (enabled) accent.copy(alpha = 0.32f) else Color(0xFF1A1140).copy(alpha = 0.5f),
+            )
+            .border(
+                width = if (enabled) d.borderEmphasized else d.borderHairline,
+                color = if (enabled) glow else DuelColors.DuelGold.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(d.radiusMd),
+            )
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = if (enabled) "NEXT PHASE ▶" else "END OF TURN",
+                color = if (enabled) glow else DuelColors.DuelGoldGlow.copy(alpha = 0.45f),
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = d.textSmall,
+                letterSpacing = d.trackNormal,
+                maxLines = 1,
+            )
+            Text(
+                text = if (enabled) (nextPhase?.shortCode ?: "") else "swipe ▶",
+                color = if (enabled) glow.copy(alpha = 0.75f) else DuelColors.DuelGoldGlow.copy(alpha = 0.35f),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = d.textMicro,
+                letterSpacing = d.trackNormal,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+// Pill that swaps between AUTO COMMIT and QUEUE MODE.
+@Composable
+private fun BufferModeToggle(
+    enabled: Boolean,
+    turnNumber: Int,
+    onChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val d = DuelTheme.dimens
+    val border = if (enabled) DuelColors.DuelGoldGlow else DuelColors.DuelGold.copy(alpha = 0.6f)
+    val bg = if (enabled) DuelColors.DuelGold.copy(alpha = 0.30f) else Color(0xFF1A1140)
+    val label = if (enabled) "QUEUE MODE" else "AUTO COMMIT"
+    Box(
+        modifier = modifier
+            .background(bg, RoundedCornerShape(d.radiusMd))
+            .border(
+                if (enabled) d.borderEmphasized else d.borderHairline,
+                border,
+                RoundedCornerShape(d.radiusMd),
+            )
+            .clickable { onChange(!enabled) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = label,
+                color = DuelColors.DuelGoldGlow,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = d.textCompact,
+                letterSpacing = d.trackWide,
+                maxLines = 1,
+            )
+            Text(
+                text = "Turn $turnNumber",
+                color = DuelColors.DuelGoldGlow.copy(alpha = 0.55f),
+                fontSize = d.textMicro,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun OneShotWheelButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val d = DuelTheme.dimens
+    Box(
+        modifier = modifier
+            .background(Color(0xFF1A1140), RoundedCornerShape(d.radiusMd))
+            .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.7f), RoundedCornerShape(d.radiusMd))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "✦",
+            color = DuelColors.DuelGoldGlow,
+            fontWeight = FontWeight.Bold,
+            fontSize = d.textIcon,
+        )
+    }
+}
+
+/**
+ * Swipe-to-confirm End Turn slider, sized smaller / centered horizontally
+ * inside its row slot to keep the touch target clear of the screen edges
+ * (predictive-back gesture zone).
  *
  * Direction-agnostic across the rotated P2 half: Compose's pointer system
  * applies the inverse layer transform to drag deltas, so "drag rightward
@@ -205,21 +438,19 @@ private fun SwipeToEndTurn(
     onEndTurn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val d = DuelTheme.dimens
     BoxWithConstraints(modifier = modifier) {
         val density = LocalDensity.current
         val trackWidthPx = with(density) { maxWidth.toPx() }
-        val thumbWidthPx = with(density) { THUMB_WIDTH_DP.dp.toPx() }
-        val insetPx = with(density) { THUMB_INSET_DP.dp.toPx() }
+        val thumbWidthPx = with(density) { d.swipeThumbWidth.toPx() }
+        val insetPx = with(density) { d.swipeThumbInset.toPx() }
         val maxThumbX = (trackWidthPx - thumbWidthPx - 2 * insetPx).coerceAtLeast(0f)
 
-        val thumbX = remember { Animatable(0f) }
-        val scope = rememberCoroutineScope()
-        val progress = if (maxThumbX > 0f) (thumbX.value / maxThumbX).coerceIn(0f, 1f) else 0f
+        var thumbX by remember { mutableFloatStateOf(0f) }
+        val progress = if (maxThumbX > 0f) (thumbX / maxThumbX).coerceIn(0f, 1f) else 0f
 
         val draggable = rememberDraggableState { delta ->
-            scope.launch {
-                thumbX.snapTo((thumbX.value + delta).coerceIn(0f, maxThumbX))
-            }
+            thumbX = (thumbX + delta).coerceIn(0f, maxThumbX)
         }
 
         val border = if (enabled) DuelColors.DuelGoldGlow else DuelColors.DuelGold.copy(alpha = 0.25f)
@@ -228,33 +459,41 @@ private fun SwipeToEndTurn(
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .clip(RoundedCornerShape(50))
+                .clip(RoundedCornerShape(d.radiusPill))
                 .background(trackBg)
-                .border(if (enabled) 2.dp else 1.dp, border, RoundedCornerShape(50))
+                .border(
+                    if (enabled) d.borderEmphasized else d.borderHairline,
+                    border,
+                    RoundedCornerShape(d.radiusPill),
+                )
                 .draggable(
                     state = draggable,
                     orientation = Orientation.Horizontal,
                     enabled = enabled,
                     onDragStopped = {
-                        if (thumbX.value >= maxThumbX * SWIPE_THRESHOLD) {
-                            // Snap to fully-committed visual, then fire.
-                            thumbX.animateTo(maxThumbX, tween(100))
+                        if (thumbX >= maxThumbX * SWIPE_THRESHOLD) {
+                            animate(
+                                initialValue = thumbX,
+                                targetValue = maxThumbX,
+                                animationSpec = tween(120),
+                            ) { v, _ -> thumbX = v }
                             onEndTurn()
                         } else {
-                            // Snap back to start.
-                            thumbX.animateTo(0f, tween(180, easing = EaseOutCubic))
+                            animate(
+                                initialValue = thumbX,
+                                targetValue = 0f,
+                                animationSpec = tween(220, easing = EaseOutCubic),
+                            ) { v, _ -> thumbX = v }
                         }
                     },
                 ),
         ) {
-            // Progress fill drawn behind the thumb.
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(progress)
                     .background(DuelColors.DuelGold.copy(alpha = 0.30f)),
             )
-            // Hint text fades as the thumb slides over it.
             Text(
                 text = "Slide to end $playerName's turn ▶",
                 color = if (enabled) {
@@ -263,21 +502,19 @@ private fun SwipeToEndTurn(
                     DuelColors.DuelGoldGlow.copy(alpha = 0.35f)
                 },
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                letterSpacing = 0.5.sp,
+                fontSize = d.textCompact,
+                letterSpacing = d.trackTight,
                 maxLines = 1,
                 modifier = Modifier.align(Alignment.Center),
             )
-            // Thumb. offset { ... } reads thumbX.value lazily so each
-            // animation frame repositions without re-layout.
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .offset { IntOffset((insetPx + thumbX.value).toInt(), 0) }
-                    .size(width = THUMB_WIDTH_DP.dp, height = (END_TURN_HEIGHT_DP - 2 * THUMB_INSET_DP).dp)
+                    .offset { IntOffset((insetPx + thumbX).toInt(), 0) }
+                    .size(width = d.swipeThumbWidth, height = d.endTurnRowHeight - d.swipeThumbInset * 2)
                     .background(
                         if (enabled) DuelColors.DuelGold else DuelColors.DuelGold.copy(alpha = 0.35f),
-                        RoundedCornerShape(50),
+                        RoundedCornerShape(d.radiusPill),
                     ),
                 contentAlignment = Alignment.Center,
             ) {
@@ -285,7 +522,7 @@ private fun SwipeToEndTurn(
                     text = "▶",
                     color = if (enabled) Color.Black else Color(0xFF8A85A8),
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp,
+                    fontSize = d.textIcon,
                 )
             }
         }
@@ -301,16 +538,17 @@ private fun BufferStrip(
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val d = DuelTheme.dimens
     Column(
         modifier = modifier
-            .background(Color(0xFF120A33), RoundedCornerShape(10.dp))
-            .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .background(Color(0xFF120A33), RoundedCornerShape(d.radiusMd))
+            .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.5f), RoundedCornerShape(d.radiusMd))
+            .padding(horizontal = d.s8, vertical = d.s6),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(d.s6),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             actions.forEach { action -> ActionChip(action) }
@@ -319,12 +557,12 @@ private fun BufferStrip(
                 text = "${actions.size}",
                 color = DuelColors.DuelGoldGlow,
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
+                fontSize = d.textBody,
             )
         }
         Row(
-            modifier = Modifier.fillMaxWidth().height(36.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().height(d.bufferActionRowHeight),
+            horizontalArrangement = Arrangement.spacedBy(d.s6),
         ) {
             BufferButton(
                 label = "Undo",
@@ -354,29 +592,32 @@ private fun BufferStrip(
 
 @Composable
 private fun ActionChip(action: StagedAction) {
+    val d = DuelTheme.dimens
     val accent = when (action.mode) {
-        LpActionMode.Attack -> DuelColors.Crimson
-        LpActionMode.Heal -> DuelColors.EmeraldHeal
-        LpActionMode.Sacrifice -> DuelColors.BloodGlow
+        LpActionMode.DamageOpponent -> DuelColors.Crimson
+        LpActionMode.HealOpponent -> Color(0xFF14B8C3)
+        LpActionMode.HealSelf -> DuelColors.EmeraldHeal
+        LpActionMode.DamageSelf -> DuelColors.BloodGlow
     }
-    val sign = if (action.mode == LpActionMode.Heal) "+" else "−"
+    val isHeal = action.mode == LpActionMode.HealSelf || action.mode == LpActionMode.HealOpponent
+    val sign = if (isHeal) "+" else "−"
     val label = "$sign${action.value}"
     Box(
         modifier = Modifier
-            .height(28.dp)
-            .background(accent.copy(alpha = 0.25f), RoundedCornerShape(6.dp))
-            .border(1.dp, accent, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp),
+            .height(d.s24 + d.s4)
+            .background(accent.copy(alpha = 0.25f), RoundedCornerShape(d.radiusXs))
+            .border(d.borderHairline, accent, RoundedCornerShape(d.radiusXs))
+            .padding(horizontal = d.s8),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             color = Color.White,
             fontWeight = FontWeight.Bold,
-            fontSize = 12.sp,
+            fontSize = d.textSmall,
         )
     }
-    androidx.compose.foundation.layout.Spacer(modifier = Modifier.width(4.dp))
+    androidx.compose.foundation.layout.Spacer(modifier = Modifier.width(d.s4))
 }
 
 @Composable
@@ -388,12 +629,17 @@ private fun BufferButton(
     modifier: Modifier = Modifier,
     emphasized: Boolean = false,
 ) {
+    val d = DuelTheme.dimens
     val border = if (enabled) tint else tint.copy(alpha = 0.3f)
     val bg = if (emphasized) tint.copy(alpha = 0.18f) else Color(0xFF1A1140)
     Box(
         modifier = modifier
-            .background(bg, RoundedCornerShape(8.dp))
-            .border(if (emphasized) 2.dp else 1.dp, border, RoundedCornerShape(8.dp))
+            .background(bg, RoundedCornerShape(d.radiusSm))
+            .border(
+                if (emphasized) d.borderEmphasized else d.borderHairline,
+                border,
+                RoundedCornerShape(d.radiusSm),
+            )
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -401,26 +647,16 @@ private fun BufferButton(
             onClick = onClick,
             enabled = enabled,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+            contentPadding = PaddingValues(horizontal = d.s4, vertical = 0.dp),
         ) {
             Text(
                 text = label,
                 color = if (enabled) Color.White else Color(0xFF8A85A8),
                 fontWeight = if (emphasized) FontWeight.Bold else FontWeight.SemiBold,
-                fontSize = 13.sp,
+                fontSize = d.textCompact,
             )
         }
     }
 }
 
-// Sized to BufferStrip's natural content height (chips 28 + buttons 36 +
-// spacing 6 + padding 12) so reservation == actual content.
-private const val BUFFER_STRIP_SLOT_HEIGHT_DP = 82
-
-private const val END_TURN_HEIGHT_DP = 48
-private const val THUMB_WIDTH_DP = 64
-private const val THUMB_INSET_DP = 4
-
-// Thumb must reach this fraction of the track to commit. 90% leaves a small
-// "almost there, keep going" zone before firing.
 private const val SWIPE_THRESHOLD = 0.9f

@@ -33,6 +33,7 @@ import app.model.Outcome
 import app.model.PlayerSlot
 import app.ui.components.StrokedText
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 import app.ui.theme.lpDigitStyle
 
 /**
@@ -62,22 +63,23 @@ fun VictoryOverlay(
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
 
+        val d = DuelTheme.dimens
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(if (showActions) 96.dp else 0.dp)
+                .height(if (showActions) d.touchLg + d.s32 else 0.dp)
                 .background(Color(0xFF120A33)),
             contentAlignment = Alignment.Center,
         ) {
             if (showActions) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(d.s12)) {
                     Button(
                         onClick = onRematch,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = DuelColors.DuelGold,
                             contentColor = Color.Black,
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(d.radiusMd),
                     ) { Text("Rematch", style = MaterialTheme.typography.titleMedium) }
 
                     Button(
@@ -86,7 +88,7 @@ fun VictoryOverlay(
                             containerColor = Color(0xFF1A1140),
                             contentColor = DuelColors.DuelGoldGlow,
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(d.radiusMd),
                     ) { Text("Save & Exit", style = MaterialTheme.typography.titleMedium) }
                 }
             }
@@ -166,8 +168,9 @@ private fun OutcomeHalf(
             HalfRole.Loser -> Color(0xFFA68585)
         }
 
+        val d = DuelTheme.dimens
         Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(d.s8),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
@@ -188,7 +191,7 @@ private fun OutcomeHalf(
                 color = nameColor,
                 style = MaterialTheme.typography.titleMedium,
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(d.s4))
         }
     }
 }

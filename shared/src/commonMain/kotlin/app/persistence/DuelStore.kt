@@ -3,6 +3,7 @@ package app.persistence
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -35,6 +36,7 @@ class DuelStore internal constructor(filePath: String) {
             startingLp = prefs[Keys.startingLp] ?: DEFAULT_LP,
             player1 = prefs[Keys.player1].orEmpty(),
             player2 = prefs[Keys.player2].orEmpty(),
+            musicEnabled = prefs[Keys.musicEnabled] ?: true,
         )
     }
 
@@ -49,7 +51,13 @@ class DuelStore internal constructor(filePath: String) {
             prefs[Keys.startingLp] = settings.startingLp
             prefs[Keys.player1] = settings.player1
             prefs[Keys.player2] = settings.player2
+            prefs[Keys.musicEnabled] = settings.musicEnabled
         }
+    }
+
+    /** Standalone setter for the music toggle — DuelScreen flips this without touching the rest. */
+    suspend fun setMusicEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[Keys.musicEnabled] = enabled }
     }
 
     /**
@@ -76,6 +84,7 @@ class DuelStore internal constructor(filePath: String) {
         val player1 = stringPreferencesKey("player1")
         val player2 = stringPreferencesKey("player2")
         val matchesJson = stringPreferencesKey("matches_json")
+        val musicEnabled = booleanPreferencesKey("music_enabled")
     }
 
     companion object {
@@ -89,6 +98,7 @@ data class DuelSettings(
     val startingLp: Int = DuelStore.DEFAULT_LP,
     val player1: String = "",
     val player2: String = "",
+    val musicEnabled: Boolean = true,
 )
 
 /**

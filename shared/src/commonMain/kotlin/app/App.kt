@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,6 +22,7 @@ import app.audio.LpSfxController
 import app.audio.OstController
 import app.audio.OstTracks
 import app.nav.Screen
+import app.persistence.DuelSettings
 import app.persistence.DuelStoreFactory
 import app.ui.duel.DuelScreen
 import app.ui.history.HistoryScreen
@@ -70,9 +72,18 @@ fun App() {
 
     var screen: Screen by remember { mutableStateOf(Screen.Setup) }
 
+    // Music-enabled flag from persistence — gates the per-screen background
+    // music below. DuelScreen reads the same flag for its event scheduler.
+    val settings by store.settings.collectAsState(initial = DuelSettings(musicEnabled = true))
+    val musicEnabled = settings.musicEnabled
+
     // Per-screen background music for non-Duel screens. DuelScreen owns its
     // own music routing through OstEventScheduler.
-    LaunchedEffect(screen::class) {
+    LaunchedEffect(screen::class, musicEnabled) {
+        if (!musicEnabled) {
+            ost.stop()
+            return@LaunchedEffect
+        }
         when (screen) {
             is Screen.Setup, is Screen.History, is Screen.MatchDetail ->
                 ost.play(OstTracks.Main)

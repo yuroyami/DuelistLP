@@ -17,58 +17,85 @@ enum class EventTier { Major, Minor }
  * it returns every event whose trigger condition fires. [OstEventScheduler]
  * then decides which actually plays based on tier + already-fired tracking.
  *
- * All events are one-timer per match unless [recurrent] is set true.
+ * All events are one-timer per match unless [recurrent] is set true. Declaration
+ * order matters: when two Major (or two Minor) events fire on the SAME LP
+ * action, [OstEventScheduler.trigger] picks the first one in this enum.
+ * Deeper-escalation events are listed last so they preempt the milder ones on
+ * subsequent ticks (e.g. LostHalfHp can preempt LessThan75 once already-fired
+ * one-timers free the slot).
  */
 enum class DuelAutoEvent(
     val track: OstTrack,
     val tier: EventTier,
     val recurrent: Boolean = false,
 ) {
-    /** #1 Match start — fires immediately, before any LP change. */
-    MatchStart(
-        track = OstTrack("event-match-start", "files/sounds/ingame-joey-normal-duel.mp3", looping = true),
+    /** (Major) Default duel theme. Fires immediately at match start. */
+    Standard(
+        track = OstTrack(
+            cacheKey = "ost-ingame-standard",
+            resourcePath = "files/ost/soundtrack_ingame_standard.mp3",
+            looping = true,
+        ),
         tier = EventTier.Major,
     ),
 
-    /** #2 Same player lost > 10% of starting LP across their last 2 hits. */
-    LossStreak(
-        track = OstTrack("event-loss-streak", "files/sounds/ingame-formem-normal-duel.mp3", looping = true),
+    /** (Minor) Same player's last 2 hits combined > 10% of starting LP. */
+    ConsecutiveHits(
+        track = OstTrack(
+            cacheKey = "ost-ingame-consecutivehits",
+            resourcePath = "files/ost/soundtrack_ingame_consecutivehits.mp3",
+            looping = true,
+        ),
         tier = EventTier.Minor,
     ),
 
-    /** #3 A player crosses below 75% of starting LP for the first time. */
-    LpBelow75(
-        track = OstTrack("event-lp-below-75", "files/sounds/ingame-masterduel-normal-duel.mp3", looping = true),
+    /** (Minor) Single heal action > 25% of starting LP. */
+    TooMuchHeal(
+        track = OstTrack(
+            cacheKey = "ost-ingame-toomuchheal",
+            resourcePath = "files/ost/soundtrack_ingame_toomuchheal.mp3",
+            looping = true,
+        ),
+        tier = EventTier.Minor,
+    ),
+
+    /** (Minor) Either player at or below 15% of starting LP (state check). */
+    AlmostLost(
+        track = OstTrack(
+            cacheKey = "ost-ingame-almostlost",
+            resourcePath = "files/ost/soundtrack_ingame_almostlost.mp3",
+            looping = true,
+        ),
+        tier = EventTier.Minor,
+    ),
+
+    /** (Major) A player crosses below 75% of starting LP for the first time. */
+    LessThan75(
+        track = OstTrack(
+            cacheKey = "ost-ingame-lessthan75",
+            resourcePath = "files/ost/soundtrack_ingame_lessthan75.mp3",
+            looping = true,
+        ),
         tier = EventTier.Major,
     ),
 
-    /** #4 A player goes above 110% of starting LP. */
-    LpAbove110(
-        track = OstTrack("event-lp-above-110", "files/sounds/ingame-legacyduelist-normal-duel.mp3", looping = true),
-        tier = EventTier.Minor,
-    ),
-
-    /** #5 Both players sitting below 25% of starting LP. */
-    BothBelow25(
-        track = OstTrack("event-both-below-25", "files/sounds/ingame-masterduel-tournament-duel.mp3", looping = true),
+    /** (Major) Both players currently below 25% of starting LP. */
+    HighStakesBelow25(
+        track = OstTrack(
+            cacheKey = "ost-ingame-highstakesbelow25",
+            resourcePath = "files/ost/soundtrack_ingame_highstakesbelow25.mp3",
+            looping = true,
+        ),
         tier = EventTier.Major,
     ),
 
-    /** #6 A player drops below half of the opponent's CURRENT LP. */
-    HalfOfOpponent(
-        track = OstTrack("event-half-of-opponent", "files/sounds/ingame-legacyduelist-tournament-duel.mp3", looping = true),
+    /** (Major) A player crosses below 50% of starting LP for the first time. */
+    LostHalfHp(
+        track = OstTrack(
+            cacheKey = "ost-ingame-losthalfhp",
+            resourcePath = "files/ost/soundtrack_ingame_losthalfhp.mp3",
+            looping = true,
+        ),
         tier = EventTier.Major,
-    ),
-
-    /** #7 Single hit ≥ 2000 damage inflicted on a player. */
-    BigHit2000(
-        track = OstTrack("event-big-hit-2000", "files/sounds/ingame-joey-losing-theme.mp3", looping = true),
-        tier = EventTier.Minor,
-    ),
-
-    /** #8 Single heal ≥ 1000 LP gained by a player. */
-    BigHeal1000(
-        track = OstTrack("event-big-heal-1000", "files/sounds/ingame-masterduel-winning-theme.mp3", looping = true),
-        tier = EventTier.Minor,
     ),
 }

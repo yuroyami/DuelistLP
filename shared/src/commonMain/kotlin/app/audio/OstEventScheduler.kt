@@ -97,6 +97,9 @@ class OstEventScheduler(
  * Pure detection of which [DuelAutoEvent]s a single LP transition fires.
  * Returns ALL satisfied conditions; [OstEventScheduler.trigger] picks at
  * most one to actually play.
+ *
+ * All thresholds scale with `startingLp` so the rules feel the same on
+ * 4000 / 8000 / 16000-LP duels.
  */
 object DuelEventDetector {
 
@@ -113,41 +116,46 @@ object DuelEventDetector {
         val fired = mutableListOf<DuelAutoEvent>()
 
         val pct75 = startingLp * 75 / 100
-        val pct110 = startingLp * 110 / 100
+        val pct50 = startingLp / 2
         val pct25 = startingLp * 25 / 100
+        val pct15 = startingLp * 15 / 100
+        val tooMuchHealThreshold = startingLp / 4   // > 25%
+        val lossStreakThreshold = startingLp / 10   // > 10%
 
-        // #3 — transition only (cross-down through threshold).
+        // Majors are added in DESCENDING severity so the most-dramatic event
+        // wins same-tick precedence (trigger() stable-sorts within tier).
+        //
+        // HighStakesBelow25 > LostHalfHp > LessThan75.
+
+        // HighStakesBelow25 — both currently below 25% (endgame).
+        if (p1After < pct25 && p2After < pct25) fired += DuelAutoEvent.HighStakesBelow25
+
+        // LostHalfHp — cross-down through 50% (mid-duel turning point).
+        val p1CrossedDown50 = p1Before >= pct50 && p1After < pct50
+        val p2CrossedDown50 = p2Before >= pct50 && p2After < pct50
+        if (p1CrossedDown50 || p2CrossedDown50) fired += DuelAutoEvent.LostHalfHp
+
+        // LessThan75 — cross-down through 75% (early warning).
         val p1CrossedDown75 = p1Before >= pct75 && p1After < pct75
         val p2CrossedDown75 = p2Before >= pct75 && p2After < pct75
-        if (p1CrossedDown75 || p2CrossedDown75) fired += DuelAutoEvent.LpBelow75
+        if (p1CrossedDown75 || p2CrossedDown75) fired += DuelAutoEvent.LessThan75
 
-        // #4 — transition only (cross-up through threshold).
-        val p1CrossedUp110 = p1Before <= pct110 && p1After > pct110
-        val p2CrossedUp110 = p2Before <= pct110 && p2After > pct110
-        if (p1CrossedUp110 || p2CrossedUp110) fired += DuelAutoEvent.LpAbove110
+        // Minor events — order among themselves doesn't matter for severity,
+        // but kept stable for determinism.
 
-        // #5 — concurrent state (both currently below).
-        if (p1After < pct25 && p2After < pct25) fired += DuelAutoEvent.BothBelow25
+        // AlmostLost — either player at or below 15% of startingLp.
+        if (p1After <= pct15 || p2After <= pct15) fired += DuelAutoEvent.AlmostLost
 
-        // #6 — relative state. Avoid div-by-zero by checking opponent > 0.
-        if (p2After > 0 && p1After * 2 < p2After) fired += DuelAutoEvent.HalfOfOpponent
-        else if (p1After > 0 && p2After * 2 < p1After) fired += DuelAutoEvent.HalfOfOpponent
+        // TooMuchHeal — single positive delta exceeds 25% of startingLp.
+        if (delta > tooMuchHealThreshold) fired += DuelAutoEvent.TooMuchHeal
 
-        // #7 / #8 — single-action magnitude.
-        if (delta <= -BIG_HIT_THRESHOLD) fired += DuelAutoEvent.BigHit2000
-        if (delta >= BIG_HEAL_THRESHOLD) fired += DuelAutoEvent.BigHeal1000
-
-        // #2 — sliding-window: this action + the previous one against the same target.
-        val lossStreakThreshold = startingLp / 10
+        // ConsecutiveHits — sliding window: this hit + the previous on same target.
         val recentForTarget = lpHistory.filter { it.target == target }.takeLast(2)
         if (recentForTarget.size == 2) {
             val totalLoss = recentForTarget.sumOf { (-it.delta).coerceAtLeast(0) }
-            if (totalLoss > lossStreakThreshold) fired += DuelAutoEvent.LossStreak
+            if (totalLoss > lossStreakThreshold) fired += DuelAutoEvent.ConsecutiveHits
         }
 
         return fired
     }
-
-    private const val BIG_HIT_THRESHOLD = 2000
-    private const val BIG_HEAL_THRESHOLD = 1000
 }

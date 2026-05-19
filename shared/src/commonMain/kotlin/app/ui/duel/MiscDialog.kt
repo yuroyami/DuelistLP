@@ -22,9 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 
 /**
  * Misc effects popover. Currently: per-player infinite-LP toggle (∞). When
@@ -41,15 +41,16 @@ fun MiscDialog(
     onP2InfiniteChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val d = DuelTheme.dimens
     Dialog(onDismissRequest = onDismiss) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF1A1140), RoundedCornerShape(14.dp))
-                .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                .padding(16.dp),
+                .background(Color(0xFF1A1140), RoundedCornerShape(d.radiusLg))
+                .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.5f), RoundedCornerShape(d.radiusLg))
+                .padding(d.s16),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(d.s12)) {
                 Text(
                     "Misc",
                     style = MaterialTheme.typography.titleLarge,
@@ -67,7 +68,7 @@ fun MiscDialog(
                 InfiniteRow(name = p1Name, on = p1Infinite, onChange = onP1InfiniteChange)
                 InfiniteRow(name = p2Name, on = p2Infinite, onChange = onP2InfiniteChange)
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(d.s4))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -83,14 +84,15 @@ fun MiscDialog(
 
 @Composable
 private fun InfiniteRow(name: String, on: Boolean, onChange: (Boolean) -> Unit) {
+    val d = DuelTheme.dimens
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .background(Color(0xFF120A33), RoundedCornerShape(10.dp))
-            .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+            .height(d.touchMd)
+            .background(Color(0xFF120A33), RoundedCornerShape(d.radiusMd))
+            .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.4f), RoundedCornerShape(d.radiusMd))
             .clickable { onChange(!on) }
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = d.s12),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {

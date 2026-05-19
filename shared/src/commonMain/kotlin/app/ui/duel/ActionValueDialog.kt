@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import app.ui.components.StrokedText
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 
 /**
  * Numeric keypad opened by a single tap on an action panel. Long-press still
@@ -47,14 +48,15 @@ fun ActionValueDialog(
     onConfirm: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val d = DuelTheme.dimens
     var value by remember { mutableStateOf(0) }
 
     val accent = panelAccent(mode)
     val accentGlow = panelAccentGlow(mode)
     val accentDeep = panelAccentDeep(mode)
 
-    fun appendDigit(d: Int) {
-        val next = value * 10 + d
+    fun appendDigit(digit: Int) {
+        val next = value * 10 + digit
         if (next <= maxValue) value = next
     }
 
@@ -73,19 +75,19 @@ fun ActionValueDialog(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF1A1140), RoundedCornerShape(14.dp))
-                .border(1.5.dp, accentGlow.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
-                .padding(16.dp),
+                .background(Color(0xFF1A1140), RoundedCornerShape(d.radiusLg))
+                .border(d.borderStandard, accentGlow.copy(alpha = 0.7f), RoundedCornerShape(d.radiusLg))
+                .padding(d.s16),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(d.s12)) {
                 // Header — mode label tinted to match the action.
                 Text(
                     text = modeTitle(mode),
                     style = TextStyle(
                         color = accentGlow,
-                        fontSize = 18.sp,
+                        fontSize = d.textReadout,
                         fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 2.5.sp,
+                        letterSpacing = d.trackExtraWide,
                     ),
                 )
 
@@ -93,9 +95,9 @@ fun ActionValueDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp)
-                        .background(accentDeep.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-                        .border(1.dp, accent.copy(alpha = 0.6f), RoundedCornerShape(10.dp)),
+                        .height(d.touchLg + d.s24)
+                        .background(accentDeep.copy(alpha = 0.35f), RoundedCornerShape(d.radiusMd))
+                        .border(d.borderHairline, accent.copy(alpha = 0.6f), RoundedCornerShape(d.radiusMd)),
                     contentAlignment = Alignment.Center,
                 ) {
                     StrokedText(
@@ -103,36 +105,21 @@ fun ActionValueDialog(
                         style = TextStyle(
                             fontStyle = FontStyle.Italic,
                             fontWeight = FontWeight.Black,
-                            fontSize = 56.sp,
+                            fontSize = (d.textOverlayResult.value * 1.45f).coerceIn(40f, 72f).sp,
                         ),
                         fillColor = if (value > 0) accentGlow else accentGlow.copy(alpha = 0.35f),
                         strokeColor = DuelColors.LpStroke,
-                        strokeWidth = 2.5.dp,
+                        strokeWidth = d.borderBold,
                     )
                 }
 
                 // Keypad. 3×3 digit grid, then a Backspace / 0 / Confirm row.
-                KeypadRow(
-                    listOf(7, 8, 9),
-                    onTap = ::appendDigit,
-                    accent = accent,
-                    accentGlow = accentGlow,
-                )
-                KeypadRow(
-                    listOf(4, 5, 6),
-                    onTap = ::appendDigit,
-                    accent = accent,
-                    accentGlow = accentGlow,
-                )
-                KeypadRow(
-                    listOf(1, 2, 3),
-                    onTap = ::appendDigit,
-                    accent = accent,
-                    accentGlow = accentGlow,
-                )
+                KeypadRow(listOf(7, 8, 9), onTap = ::appendDigit, accent = accent, accentGlow = accentGlow)
+                KeypadRow(listOf(4, 5, 6), onTap = ::appendDigit, accent = accent, accentGlow = accentGlow)
+                KeypadRow(listOf(1, 2, 3), onTap = ::appendDigit, accent = accent, accentGlow = accentGlow)
                 Row(
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().height(d.touchLg),
+                    horizontalArrangement = Arrangement.spacedBy(d.s8),
                 ) {
                     KeypadButton(
                         label = "⌫",
@@ -159,7 +146,7 @@ fun ActionValueDialog(
                     )
                 }
 
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(d.s2))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -183,14 +170,15 @@ private fun KeypadRow(
     accent: Color,
     accentGlow: Color,
 ) {
+    val d = DuelTheme.dimens
     Row(
-        modifier = Modifier.fillMaxWidth().height(56.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().height(d.touchLg),
+        horizontalArrangement = Arrangement.spacedBy(d.s8),
     ) {
-        digits.forEach { d ->
+        digits.forEach { digit ->
             KeypadButton(
-                label = d.toString(),
-                onClick = { onTap(d) },
+                label = digit.toString(),
+                onClick = { onTap(digit) },
                 accent = accent,
                 accentGlow = accentGlow,
                 modifier = Modifier.weight(1f).fillMaxSize(),
@@ -209,6 +197,7 @@ private fun KeypadButton(
     emphasized: Boolean = false,
     enabled: Boolean = true,
 ) {
+    val d = DuelTheme.dimens
     val border = when {
         !enabled -> accent.copy(alpha = 0.25f)
         emphasized -> accentGlow
@@ -222,8 +211,12 @@ private fun KeypadButton(
     }
     Box(
         modifier = modifier
-            .background(bg, RoundedCornerShape(10.dp))
-            .border(if (emphasized && enabled) 2.dp else 1.dp, border, RoundedCornerShape(10.dp))
+            .background(bg, RoundedCornerShape(d.radiusMd))
+            .border(
+                if (emphasized && enabled) d.borderEmphasized else d.borderHairline,
+                border,
+                RoundedCornerShape(d.radiusMd),
+            )
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -237,7 +230,8 @@ private fun KeypadButton(
 }
 
 private fun modeTitle(mode: LpActionMode): String = when (mode) {
-    LpActionMode.Attack -> "ATTACK"
-    LpActionMode.Heal -> "HEAL"
-    LpActionMode.Sacrifice -> "SACRIFICE"
+    LpActionMode.DamageOpponent -> "DAMAGE OPPONENT"
+    LpActionMode.HealOpponent -> "HEAL OPPONENT"
+    LpActionMode.HealSelf -> "HEAL SELF"
+    LpActionMode.DamageSelf -> "DAMAGE SELF"
 }

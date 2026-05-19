@@ -3,6 +3,7 @@ package app.ui.duel
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,7 +19,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ui.components.StrokedText
 import app.ui.theme.DuelColors
-import app.ui.theme.heuristicaItalicFamily
 import androidx.compose.ui.text.TextStyle
 
 /**
@@ -90,10 +90,15 @@ fun LpFloatingDelta(
         else -> 1f - ((p - phaseHangEnd) / (1f - phaseHangEnd))
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
+        // Scale the float text relative to the LP box this is drawn over.
+        val baseSp = (kotlin.math.min(maxWidth.value, maxHeight.value) * 0.30f).coerceIn(48f, 96f)
+        val haloSp = (baseSp * 1.15f).toInt()
+        val coreSp = baseSp.toInt()
+
         Box(
             modifier = Modifier
                 .alpha(alpha)
@@ -106,14 +111,14 @@ fun LpFloatingDelta(
             // Glow halo (slightly larger faded layer behind the main text).
             StrokedText(
                 text = text,
-                style = floatingStyle(74),
+                style = floatingStyle(haloSp),
                 fillColor = glow.copy(alpha = 0.55f),
                 strokeColor = glow.copy(alpha = 0.0f),
                 strokeWidth = 0.dp,
             )
             StrokedText(
                 text = text,
-                style = floatingStyle(64),
+                style = floatingStyle(coreSp),
                 fillColor = color,
                 strokeColor = Color.Black,
                 strokeWidth = 3.dp,

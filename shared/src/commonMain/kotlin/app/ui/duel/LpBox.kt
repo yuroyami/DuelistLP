@@ -4,9 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -26,14 +24,17 @@ import app.ui.theme.lpDigitStyle
 import org.jetbrains.compose.resources.painterResource
 
 /**
- * LP card. Background webp + golden border + two stacked copies of the LP:
- *   - top: rotated 180°, half size — the inline mirror for the opponent
- *   - bottom: upright, full size — the player's main read
+ * LP card. Background webp + golden border + a single centered LP read.
  *
- * Digit font sizes are computed from the measured box at layout so the card
- * fits any device without hand-tuning. When [isInfinite] is true, a single
- * ∞ glyph is drawn instead (rotating ∞ 180° is a no-op so the mirror is
- * redundant).
+ * The previous two-copy layout (mirrored mini-LP on top + main below) was
+ * removed: each player now sees the opponent's LP as a separate row above
+ * the LP card, so the card itself just shows their own value, centered and
+ * large. The box also shrinks a bit so it doesn't dominate the half — there's
+ * room above for the opponent peek and the phase tracker.
+ *
+ * Digit font size is computed from the measured box at layout so the card
+ * fits any device without hand-tuning. When [isInfinite] is true, a single ∞
+ * glyph is drawn instead.
  */
 @Composable
 fun LpBox(
@@ -78,80 +79,48 @@ fun LpBox(
                 )
             }
         } else {
-            // Each half gets exactly half the height. Mirror is half the
-            // font size of main, sharing a common visual midline through
-            // the card's geometric center.
-            val perHalfHeight = (maxHeight - VERTICAL_INSET_DP.dp) / 2
-            val byHeight = perHalfHeight.value * 0.78f
+            // Single centred digit reel. Font size scales with the box so the
+            // 5-digit max ("16000") still fits on small phones, while smaller
+            // values use most of the available height.
+            val byHeight = (maxHeight - VERTICAL_INSET_DP.dp).value * 0.78f
             val byWidth = maxWidth.value / (minDigits * 0.62f)
-            val digitSpBottom = minOf(byHeight, byWidth).toInt().coerceIn(MIN_DIGIT_SP, MAX_DIGIT_SP)
-            val strokeDpBottom = (digitSpBottom / 28f).coerceAtLeast(1f).dp
-            val digitSpTop = (digitSpBottom / 2).coerceAtLeast(MIN_OPPONENT_SP)
-            val strokeDpTop = (digitSpTop / 28f).coerceAtLeast(0.5f).dp
+            val digitSp = minOf(byHeight, byWidth).toInt().coerceIn(MIN_DIGIT_SP, MAX_DIGIT_SP)
+            val strokeDp = (digitSp / 28f).coerceAtLeast(1f).dp
 
-            // Heuristica italic overhangs past the natural advance on the
-            // trailing edge. Without compensation, a centered Row of digits
-            // paints visually shifted toward the slant direction. The
-            // translationX below shifts the upright copy LEFT and the
-            // 180°-rotated copy RIGHT (rotation flips the X direction inside
-            // the graphics layer) by the same magnitude, so both visual
-            // centers land on the card's vertical midline.
-            val correctionFactor = ITALIC_VISUAL_OFFSET_FACTOR
+            // Heuristica italic glyphs visually overhang past their layout
+            // box. Shift LEFT by half the overhang so the visual centre lands
+            // on the card's geometric centre (matches the previous mirrored
+            // layout's compensation, just applied once for the single copy).
+            val correctionPx = digitSp * ITALIC_VISUAL_OFFSET_FACTOR
 
-            Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.graphicsLayer {
+                        translationX = -correctionPx.sp.toPx()
+                    },
                 ) {
-                    Box(
-                        modifier = Modifier.graphicsLayer {
-                            rotationZ = 180f
-                            translationX = (digitSpTop * correctionFactor).sp.toPx()
-                        },
-                    ) {
-                        AnimatedLifePoints(
-                            value = value,
-                            style = lpDigitStyle(digitSpTop),
-                            strokeWidth = strokeDpTop,
-                            durationMs = durationMs,
-                            stepMagnitude = stepMagnitude,
-                        )
-                    }
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(
-                        modifier = Modifier.graphicsLayer {
-                            translationX = -(digitSpBottom * correctionFactor).sp.toPx()
-                        },
-                    ) {
-                        AnimatedLifePoints(
-                            value = value,
-                            style = lpDigitStyle(digitSpBottom),
-                            strokeWidth = strokeDpBottom,
-                            durationMs = durationMs,
-                            stepMagnitude = stepMagnitude,
-                        )
-                    }
+                    AnimatedLifePoints(
+                        value = value,
+                        style = lpDigitStyle(digitSp),
+                        strokeWidth = strokeDp,
+                        durationMs = durationMs,
+                        stepMagnitude = stepMagnitude,
+                    )
                 }
             }
         }
     }
 }
 
-private const val MIN_DIGIT_SP = 24
-private const val MAX_DIGIT_SP = 88
-private const val MIN_OPPONENT_SP = 12
-private const val INFINITY_MAX_SP = 130
-private const val VERTICAL_INSET_DP = 12   // border + column padding
+private const val MIN_DIGIT_SP = 28
+private const val MAX_DIGIT_SP = 100
+private const val INFINITY_MAX_SP = 140
+private const val VERTICAL_INSET_DP = 12
 
 // Half of Heuristica italic's right-overhang as a fraction of font size.
-// Empirically tuned: italic slant pushes the visual ~12% past the natural
-// advance; halving that recenters the layout box on the visual glyph.
 private const val ITALIC_VISUAL_OFFSET_FACTOR = 0.06f

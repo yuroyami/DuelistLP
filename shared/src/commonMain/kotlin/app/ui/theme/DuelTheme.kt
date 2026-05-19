@@ -42,6 +42,7 @@ fun DuelTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = scheme,
         typography = duelTypography(),
-        content = content,
-    )
+    ) {
+        ProvideDuelDimens(content = content)
+    }
 }

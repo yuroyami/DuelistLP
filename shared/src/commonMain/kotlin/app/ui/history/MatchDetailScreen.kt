@@ -32,6 +32,7 @@ import app.model.Match
 import app.model.MatchEvent
 import app.model.PlayerSlot
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 import app.util.formatClockTime
 import app.util.formatDateTime
 import app.util.formatDuration
@@ -44,6 +45,7 @@ import app.util.formatDuration
  */
 @Composable
 fun MatchDetailScreen(match: Match, onBack: () -> Unit) {
+    val d = DuelTheme.dimens
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -51,7 +53,7 @@ fun MatchDetailScreen(match: Match, onBack: () -> Unit) {
             .windowInsetsPadding(WindowInsets.systemBars),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = d.s12, vertical = d.s8),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -62,32 +64,33 @@ fun MatchDetailScreen(match: Match, onBack: () -> Unit) {
                 color = DuelColors.DuelGoldGlow,
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(Modifier.width(56.dp))
+            Spacer(Modifier.width(d.touchLg))
         }
 
-        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Column(modifier = Modifier.padding(horizontal = d.s16)) {
             Header(match)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(d.s12))
             Text(
                 "Event log",
                 color = DuelColors.DuelGoldGlow,
                 style = MaterialTheme.typography.titleMedium,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(d.s8))
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = d.s16),
+            verticalArrangement = Arrangement.spacedBy(d.s6),
         ) {
             items(match.events) { event -> EventRow(event, match) }
-            item { Spacer(Modifier.height(20.dp)) }
+            item { Spacer(Modifier.height(d.s20)) }
         }
     }
 }
 
 @Composable
 private fun Header(match: Match) {
+    val d = DuelTheme.dimens
     val winnerLabel = when {
         match.isDraw -> "Draw"
         match.winner != null -> if (match.winner == PlayerSlot.P1) match.player1 else match.player2
@@ -96,11 +99,11 @@ private fun Header(match: Match) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF1A1140), RoundedCornerShape(12.dp))
-            .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-            .padding(14.dp),
+            .background(Color(0xFF1A1140), RoundedCornerShape(d.radiusMd))
+            .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.45f), RoundedCornerShape(d.radiusMd))
+            .padding(d.s14),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(d.s4)) {
             Text(
                 "${match.player1}  vs  ${match.player2}",
                 style = MaterialTheme.typography.titleMedium,
@@ -123,19 +126,20 @@ private fun Header(match: Match) {
 
 @Composable
 private fun EventRow(event: MatchEvent, match: Match) {
+    val d = DuelTheme.dimens
     val (label, detail, color) = describeEvent(event, match)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF130C36), RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .background(Color(0xFF130C36), RoundedCornerShape(d.radiusSm))
+            .padding(horizontal = d.s10, vertical = d.s8),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             formatClockTime(event.timestamp),
             color = DuelColors.DuelGoldGlow.copy(alpha = 0.6f),
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(end = 10.dp),
+            modifier = Modifier.padding(end = d.s10),
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(label, color = color, fontWeight = FontWeight.Bold)

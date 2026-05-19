@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,26 +36,32 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.resources.Res
 import app.resources.blood_drop
 import app.resources.healing_heart
 import app.resources.sword
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 import org.jetbrains.compose.resources.painterResource
 
 /**
- * Three-panel combat surface: ATTACK | SACRIFICE | HEAL, equal width.
+ * Four-panel combat surface arranged 2×2:
  *
- * Two gesture detectors share the row:
+ *    +-------------------+-------------------+
+ *    | DAMAGE OPPONENT   | HEAL OPPONENT     |   (opponent-targeting row)
+ *    +-------------------+-------------------+
+ *    | HEAL SELF         | DAMAGE SELF       |   (self-targeting row)
+ *    +-------------------+-------------------+
+ *
+ * Two gesture detectors share the surface:
  *   - Single tap → [onTapForValue] opens [ActionValueDialog] (numeric keypad).
- *     Mode picked by [modeForOffset] (which third was tapped).
+ *     Mode picked by [modeForOffset] (which quadrant was tapped).
  *   - Long-press + vertical drag → opens the triangular gauge ([LpWheelState]
  *     emitted via [onWheelStateChange]). Drag up = bigger value. Released
  *     with value > 0 → [onStage]; released at 0 or cancelled → no commit.
  *
- * Sign of the resulting LP delta is determined later by [LpActionMode] —
- * this surface only emits non-negative magnitudes.
+ * Sign and target of the resulting LP delta are determined later by
+ * [LpActionMode] — this surface only emits non-negative magnitudes.
  *
  * The gauge OVERLAY itself is hosted at the [DuelScreen] level so it can
  * render on the OPPOSITE half from the pressing finger.
@@ -97,7 +104,12 @@ fun LpActionRegion(
                 detectTapGestures(
                     onTap = { offset ->
                         if (!enabledRef.value) return@detectTapGestures
-                        onTapForValue(modeForOffset(offset.x, this.size.width.toFloat()))
+                        onTapForValue(
+                            modeForOffset(
+                                offset.x, offset.y,
+                                this.size.width.toFloat(), this.size.height.toFloat(),
+                            ),
+                        )
                     },
                     onLongPress = { /* handled by detectDragGesturesAfterLongPress */ },
                 )
@@ -107,7 +119,10 @@ fun LpActionRegion(
                 detectDragGesturesAfterLongPress(
                     onDragStart = { offset ->
                         if (!enabledRef.value) return@detectDragGesturesAfterLongPress
-                        val mode = modeForOffset(offset.x, this.size.width.toFloat())
+                        val mode = modeForOffset(
+                            offset.x, offset.y,
+                            this.size.width.toFloat(), this.size.height.toFloat(),
+                        )
                         pressAnchor = offset
                         publish(LpWheelState(mode = mode, value = 0))
                     },
@@ -128,38 +143,55 @@ fun LpActionRegion(
             },
     ) {
         val activeMode = wheel?.mode
-        Row(modifier = Modifier.fillMaxSize()) {
-            ActionPanel(
-                mode = LpActionMode.Attack,
-                isActive = activeMode == LpActionMode.Attack,
-                isDimmed = activeMode != null && activeMode != LpActionMode.Attack,
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Top row: opponent-targeting actions.
+            Row(
                 modifier = Modifier
-                    .fillMaxHeight()
+                    .fillMaxWidth()
                     .weight(1f),
-            )
-            ActionPanel(
-                mode = LpActionMode.Sacrifice,
-                isActive = activeMode == LpActionMode.Sacrifice,
-                isDimmed = activeMode != null && activeMode != LpActionMode.Sacrifice,
+            ) {
+                ActionPanel(
+                    mode = LpActionMode.DamageOpponent,
+                    isActive = activeMode == LpActionMode.DamageOpponent,
+                    isDimmed = activeMode != null && activeMode != LpActionMode.DamageOpponent,
+                    modifier = Modifier.fillMaxHeight().weight(1f),
+                )
+                ActionPanel(
+                    mode = LpActionMode.HealOpponent,
+                    isActive = activeMode == LpActionMode.HealOpponent,
+                    isDimmed = activeMode != null && activeMode != LpActionMode.HealOpponent,
+                    modifier = Modifier.fillMaxHeight().weight(1f),
+                )
+            }
+            // Bottom row: self-targeting actions.
+            Row(
                 modifier = Modifier
-                    .fillMaxHeight()
+                    .fillMaxWidth()
                     .weight(1f),
-            )
-            ActionPanel(
-                mode = LpActionMode.Heal,
-                isActive = activeMode == LpActionMode.Heal,
-                isDimmed = activeMode != null && activeMode != LpActionMode.Heal,
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .weight(1f),
-            )
+            ) {
+                ActionPanel(
+                    mode = LpActionMode.HealSelf,
+                    isActive = activeMode == LpActionMode.HealSelf,
+                    isDimmed = activeMode != null && activeMode != LpActionMode.HealSelf,
+                    modifier = Modifier.fillMaxHeight().weight(1f),
+                )
+                ActionPanel(
+                    mode = LpActionMode.DamageSelf,
+                    isActive = activeMode == LpActionMode.DamageSelf,
+                    isDimmed = activeMode != null && activeMode != LpActionMode.DamageSelf,
+                    modifier = Modifier.fillMaxHeight().weight(1f),
+                )
+            }
         }
     }
 }
 
 /**
- * One ATTACK / SACRIFICE / HEAL panel. Decorative — pointer events live in
+ * One quadrant in the 2×2 action grid. Decorative — pointer events live in
  * the parent [LpActionRegion]'s shared gesture detector.
+ *
+ * Compact layout: icon on top, two-line label below (e.g. "DAMAGE\nOPPONENT")
+ * because the panel cells are roughly half-width × half-height of the region.
  */
 @Composable
 private fun ActionPanel(
@@ -171,12 +203,14 @@ private fun ActionPanel(
     val accent = panelAccent(mode)
     val accentDeep = panelAccentDeep(mode)
     val accentGlow = panelAccentGlow(mode)
-    val (label, drawable, hint) = when (mode) {
-        LpActionMode.Attack -> Triple("ATTACK", Res.drawable.sword, "tap · long-press")
-        LpActionMode.Heal -> Triple("HEAL", Res.drawable.healing_heart, "tap · long-press")
-        LpActionMode.Sacrifice -> Triple("SACRIFICE", Res.drawable.blood_drop, "tap · long-press")
+    val (label, drawable) = when (mode) {
+        LpActionMode.DamageOpponent -> "DAMAGE\nOPPONENT" to Res.drawable.sword
+        LpActionMode.HealOpponent -> "HEAL\nOPPONENT" to Res.drawable.healing_heart
+        LpActionMode.HealSelf -> "HEAL\nSELF" to Res.drawable.healing_heart
+        LpActionMode.DamageSelf -> "DAMAGE\nSELF" to Res.drawable.blood_drop
     }
 
+    val d = DuelTheme.dimens
     val targetAlpha = if (isDimmed) 0.35f else 1f
     val alpha by animateFloatAsState(targetValue = targetAlpha, animationSpec = tween(180))
     val targetScale = if (isActive) 1.04f else 1f
@@ -184,8 +218,8 @@ private fun ActionPanel(
 
     Box(
         modifier = modifier
-            .padding(3.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .padding(d.s4 - 1.dp)
+            .clip(RoundedCornerShape(d.radiusLg))
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
@@ -196,15 +230,15 @@ private fun ActionPanel(
                 ),
             )
             .border(
-                width = if (isActive) 2.5.dp else 1.5.dp,
+                width = if (isActive) d.borderBold else d.borderStandard,
                 color = if (isActive) accentGlow else DuelColors.DuelGold.copy(alpha = 0.65f),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(d.radiusLg),
             ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(vertical = 10.dp),
+                .padding(vertical = d.s6, horizontal = d.s4),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -212,7 +246,7 @@ private fun ActionPanel(
                 if (isActive) {
                     Box(
                         modifier = Modifier
-                            .size(96.dp)
+                            .size(d.actionGlowSize)
                             .background(
                                 Brush.radialGradient(
                                     colors = listOf(accentGlow.copy(alpha = 0.55f), Color.Transparent),
@@ -225,24 +259,21 @@ private fun ActionPanel(
                     contentDescription = label,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(d.actionIconSize)
                         .scale(scale)
-                        .clip(RoundedCornerShape(10.dp)),
+                        .clip(RoundedCornerShape(d.radiusSm)),
                     alpha = alpha,
                 )
             }
             Text(
                 text = label,
                 color = if (isActive) accentGlow else DuelColors.DuelGoldGlow,
-                fontSize = 13.sp,
+                fontSize = d.textTiny,
                 fontWeight = FontWeight.ExtraBold,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-            Text(
-                text = hint,
-                color = DuelColors.DuelGoldGlow.copy(alpha = 0.55f),
-                fontSize = 9.sp,
-                modifier = Modifier.padding(top = 1.dp),
+                lineHeight = d.textCompact,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                letterSpacing = d.trackTight,
+                modifier = Modifier.padding(top = d.s4),
             )
         }
     }
@@ -255,21 +286,24 @@ data class LpWheelState(
 )
 
 internal fun panelAccent(mode: LpActionMode): Color = when (mode) {
-    LpActionMode.Attack -> DuelColors.Crimson
-    LpActionMode.Heal -> DuelColors.EmeraldHeal
-    LpActionMode.Sacrifice -> DuelColors.BloodRed
+    LpActionMode.DamageOpponent -> DuelColors.Crimson
+    LpActionMode.HealOpponent -> Color(0xFF14B8C3)
+    LpActionMode.HealSelf -> DuelColors.EmeraldHeal
+    LpActionMode.DamageSelf -> DuelColors.BloodRed
 }
 
 internal fun panelAccentDeep(mode: LpActionMode): Color = when (mode) {
-    LpActionMode.Attack -> Color(0xFF5A0A18)
-    LpActionMode.Heal -> Color(0xFF064D38)
-    LpActionMode.Sacrifice -> Color(0xFF3A0410)
+    LpActionMode.DamageOpponent -> Color(0xFF5A0A18)
+    LpActionMode.HealOpponent -> Color(0xFF064D54)
+    LpActionMode.HealSelf -> Color(0xFF064D38)
+    LpActionMode.DamageSelf -> Color(0xFF3A0410)
 }
 
 internal fun panelAccentGlow(mode: LpActionMode): Color = when (mode) {
-    LpActionMode.Attack -> Color(0xFFFF6A7C)
-    LpActionMode.Heal -> Color(0xFF6BF0BD)
-    LpActionMode.Sacrifice -> DuelColors.BloodGlow
+    LpActionMode.DamageOpponent -> Color(0xFFFF6A7C)
+    LpActionMode.HealOpponent -> Color(0xFF6BE3F0)
+    LpActionMode.HealSelf -> Color(0xFF6BF0BD)
+    LpActionMode.DamageSelf -> DuelColors.BloodGlow
 }
 
 private fun snapToStep(raw: Int): Int {
@@ -280,13 +314,18 @@ private fun snapToStep(raw: Int): Int {
     return sign * snapped
 }
 
-/** Map a horizontal touch x-offset to the action mode for that third of the row. */
-private fun modeForOffset(x: Float, width: Float): LpActionMode {
-    val third = width / 3f
+/**
+ * Map a (x, y) touch offset to the mode for that quadrant in the 2×2 grid.
+ * Top row = opponent-targeting; bottom row = self-targeting.
+ */
+private fun modeForOffset(x: Float, y: Float, width: Float, height: Float): LpActionMode {
+    val isLeft = x < width / 2f
+    val isTop = y < height / 2f
     return when {
-        x < third -> LpActionMode.Attack
-        x < 2f * third -> LpActionMode.Sacrifice
-        else -> LpActionMode.Heal
+        isTop && isLeft -> LpActionMode.DamageOpponent
+        isTop -> LpActionMode.HealOpponent
+        isLeft -> LpActionMode.HealSelf
+        else -> LpActionMode.DamageSelf
     }
 }
 

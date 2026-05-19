@@ -18,19 +18,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.ui.components.AnimatedLifePoints
 import app.ui.components.StrokedText
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 import app.ui.theme.lpDigitStyle
 
 /**
- * Slim 72-dp strip rendered in place of the full [PlayerHalf] while the
- * other player has the turn. Name + FIRST badge on one side, animated LP on
- * the other. Floating-delta still pops over this strip so the active player
- * sees their attack land on the opponent's peek with the same big +/− pop.
+ * Slim strip rendered in place of the full [PlayerHalf] while the other
+ * player has the turn. Name + FIRST badge on one side, animated LP on the
+ * other. Floating-delta still pops over this strip so the active player sees
+ * their attack land on the opponent's peek with the same big +/− pop.
  *
+ * Height scales with viewport via [DuelTheme.dimens.opponentPeekHeight].
  * Rotated 180° for P2 so it reads upright across the table.
  */
 @Composable
@@ -45,24 +45,25 @@ fun OpponentPeek(
     onFloatingDeltaComplete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val d = DuelTheme.dimens
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(PEEK_HEIGHT_DP.dp)
+            .height(d.opponentPeekHeight)
             .background(Color(0xFF120A33))
-            .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.45f))
+            .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.45f))
             .then(if (rotated) Modifier.rotate(180f) else Modifier),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = d.s16, vertical = d.s8),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(d.s8),
             ) {
                 Text(
                     text = name,
@@ -72,27 +73,33 @@ fun OpponentPeek(
                 if (showFirstBadge) {
                     Box(
                         modifier = Modifier
-                            .background(DuelColors.DuelGold.copy(alpha = 0.85f), RoundedCornerShape(50))
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                            .background(DuelColors.DuelGold.copy(alpha = 0.85f), RoundedCornerShape(d.radiusPill))
+                            .padding(horizontal = d.s8, vertical = d.s2),
                     ) {
-                        Text("FIRST", color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "FIRST",
+                            color = Color.Black,
+                            fontSize = d.textMicro,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 }
             }
 
+            val lpDigitSp = (d.textPeekLp.value).toInt().coerceAtLeast(20)
             if (isInfinite) {
                 StrokedText(
                     text = "∞",
-                    style = lpDigitStyle(40),
+                    style = lpDigitStyle(lpDigitSp + 6),
                     fillColor = DuelColors.LpYellow,
                     strokeColor = DuelColors.LpStroke,
-                    strokeWidth = 2.dp,
+                    strokeWidth = d.borderEmphasized,
                 )
             } else {
                 AnimatedLifePoints(
                     value = lp,
-                    style = lpDigitStyle(34),
-                    strokeWidth = 1.5.dp,
+                    style = lpDigitStyle(lpDigitSp),
+                    strokeWidth = d.borderStandard,
                     durationMs = animationDurationMs,
                 )
             }
@@ -107,5 +114,3 @@ fun OpponentPeek(
         }
     }
 }
-
-private const val PEEK_HEIGHT_DP = 72

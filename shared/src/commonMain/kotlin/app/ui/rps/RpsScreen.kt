@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -58,11 +61,12 @@ import app.model.RpsPick
 import app.model.resolveRps
 import app.ui.components.StrokedText
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 import app.ui.theme.lpDigitStyle
 import kotlinx.coroutines.delay
 
 // Picking → Revealing (~250 ms hold so glyphs swap without a hard cut)
-//   → Result (winner shows BEGIN DUEL; tie auto-restarts after 800 ms)
+//   → Result (winner picks turn order; tie auto-restarts after 800 ms)
 private enum class Phase { Picking, Revealing, Result }
 
 /**
@@ -70,8 +74,9 @@ private enum class Phase { Picking, Revealing, Result }
  * at extreme speed; tap anywhere to lock a uniformly-random pick. Both sides
  * picked → reveal → result. Ties auto-rematch with [rounds] incremented.
  *
- * Calls [onResolved] with the winner, both picks, and the round count when
- * the user confirms BEGIN DUEL.
+ * After a non-tie result, the WINNER picks the turn order (go first or
+ * second). Once chosen, BEGIN DUEL appears and [onResolved] fires with the
+ * chosen first-player slot.
  */
 @Composable
 fun RpsScreen(
@@ -84,13 +89,13 @@ fun RpsScreen(
     var phase by remember { mutableStateOf(Phase.Picking) }
     var rounds by remember { mutableStateOf(1) }
     var result by remember { mutableStateOf<RpsOutcome?>(null) }
+    // Set when the RPS winner picks who actually goes first. Until set, the
+    // halves show "winner is choosing"; once set, banners + BEGIN DUEL appear.
+    var firstPlayer by remember { mutableStateOf<PlayerSlot?>(null) }
 
     LaunchedEffect(p1Pick, p2Pick) {
         if (p1Pick != null && p2Pick != null && phase == Phase.Picking) {
             phase = Phase.Revealing
-            // Brief hold so the picker glyphs visibly swap to the reveal
-            // glyphs without a hard cut. No 3-2-1 countdown — both players
-            // have already committed by the time both picks land.
             delay(REVEAL_FLASH_MS)
             val outcome = resolveRps(p1Pick!!, p2Pick!!)
             result = outcome
@@ -100,11 +105,24 @@ fun RpsScreen(
                 p1Pick = null
                 p2Pick = null
                 result = null
+                firstPlayer = null
                 rounds += 1
                 phase = Phase.Picking
             }
         }
     }
+
+    val winnerSlot: PlayerSlot? = when (result) {
+        RpsOutcome.P1 -> PlayerSlot.P1
+        RpsOutcome.P2 -> PlayerSlot.P2
+        else -> null
+    }
+    val winnerName = when (winnerSlot) {
+        PlayerSlot.P1 -> player1
+        PlayerSlot.P2 -> player2
+        null -> ""
+    }
+    val choicePending = phase == Phase.Result && winnerSlot != null && firstPlayer == null
 
     Box(
         modifier = Modifier
@@ -118,42 +136,57 @@ fun RpsScreen(
                 otherPicked = p1Pick != null,
                 myPick = p2Pick,
                 showReveal = phase != Phase.Picking,
-                resultBanner = bannerFor(result, isP1Side = false),
+                resultBanner = bannerFor(result, firstPlayer, isP1Side = false),
+                showWaiting = choicePending && winnerSlot != PlayerSlot.P2,
                 rotated = true,
                 onPick = { if (phase == Phase.Picking && p2Pick == null) p2Pick = it },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
 
-            CenterDivider(phase = phase, rounds = rounds)
+            CenterDivider(phase = phase, rounds = rounds, choosingName = if (choicePending) winnerName else null)
 
             RpsHalf(
                 playerName = player1,
                 otherPicked = p2Pick != null,
                 myPick = p1Pick,
                 showReveal = phase != Phase.Picking,
-                resultBanner = bannerFor(result, isP1Side = true),
+                resultBanner = bannerFor(result, firstPlayer, isP1Side = true),
+                showWaiting = choicePending && winnerSlot != PlayerSlot.P1,
                 rotated = false,
                 onPick = { if (phase == Phase.Picking && p1Pick == null) p1Pick = it },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
 
-        if (phase == Phase.Result && result != null && result != RpsOutcome.TIE) {
+        // Winner's turn-order choice — only one player decides, so we render
+        // a single overlay positioned on their half and rotated for them.
+        if (choicePending) {
+            TurnOrderChoiceOverlay(
+                winnerSlot = winnerSlot,
+                winnerName = winnerName,
+                onChoice = { theyGoFirst ->
+                    firstPlayer = if (theyGoFirst) winnerSlot else winnerSlot.opposite()
+                },
+            )
+        }
+
+        // BEGIN DUEL only once turn order is locked.
+        if (phase == Phase.Result && result != null && result != RpsOutcome.TIE && firstPlayer != null) {
+            val d = DuelTheme.dimens
             Box(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
+                modifier = Modifier.fillMaxSize().padding(d.s24),
                 contentAlignment = Alignment.Center,
             ) {
                 Button(
                     onClick = {
-                        val firstPlayer = if (result == RpsOutcome.P1) PlayerSlot.P1 else PlayerSlot.P2
-                        onResolved(firstPlayer, p1Pick!!, p2Pick!!, rounds)
+                        onResolved(firstPlayer!!, p1Pick!!, p2Pick!!, rounds)
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = DuelColors.DuelGold,
                         contentColor = Color.Black,
                     ),
-                    modifier = Modifier.height(56.dp),
-                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.height(d.touchLg),
+                    shape = RoundedCornerShape(d.radiusLg),
                 ) {
                     Text("BEGIN DUEL", style = MaterialTheme.typography.titleMedium)
                 }
@@ -162,11 +195,26 @@ fun RpsScreen(
     }
 }
 
-private fun bannerFor(result: RpsOutcome?, isP1Side: Boolean): String? = when (result) {
+private fun PlayerSlot.opposite(): PlayerSlot =
+    if (this == PlayerSlot.P1) PlayerSlot.P2 else PlayerSlot.P1
+
+/**
+ * Banner shown in the bottom slot of each RpsHalf. While the winner is still
+ * deciding, both sides see "WINNER!"/"DEFEAT". Once a turn order is locked,
+ * it switches to FIRST/SECOND.
+ */
+private fun bannerFor(result: RpsOutcome?, firstPlayer: PlayerSlot?, isP1Side: Boolean): String? = when (result) {
     null -> null
     RpsOutcome.TIE -> "TIE"
-    RpsOutcome.P1 -> if (isP1Side) "FIRST" else "SECOND"
-    RpsOutcome.P2 -> if (isP1Side) "SECOND" else "FIRST"
+    RpsOutcome.P1, RpsOutcome.P2 -> {
+        if (firstPlayer == null) {
+            val won = (result == RpsOutcome.P1) == isP1Side
+            if (won) "WINNER" else "DEFEAT"
+        } else {
+            val goesFirst = (firstPlayer == PlayerSlot.P1) == isP1Side
+            if (goesFirst) "FIRST" else "SECOND"
+        }
+    }
 }
 
 @Composable
@@ -176,6 +224,7 @@ private fun RpsHalf(
     myPick: RpsPick?,
     showReveal: Boolean,
     resultBanner: String?,
+    showWaiting: Boolean,
     rotated: Boolean,
     onPick: (RpsPick) -> Unit,
     modifier: Modifier = Modifier,
@@ -199,11 +248,12 @@ private fun RpsHalf(
         val cardHeightDp = (cardWidthDp.value * 1.15f).dp
         val marqueeH = (halfH.value * 0.40f).toInt().coerceIn(72, 130).dp
 
+        val d = DuelTheme.dimens
         // Vertical-only padding here so the shuffle marquee can extend to the
         // screen's left/right edges. Other children are center-aligned and
         // short, so they don't need horizontal insets.
         Column(
-            modifier = Modifier.fillMaxSize().padding(vertical = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(vertical = d.s16),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -233,14 +283,20 @@ private fun RpsHalf(
                 )
             }
 
-            Box(modifier = Modifier.height(56.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.height(d.touchLg), contentAlignment = Alignment.Center) {
                 when {
+                    showWaiting -> Text(
+                        "Opponent is choosing turn order…",
+                        color = DuelColors.DuelGoldGlow.copy(alpha = 0.65f),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     resultBanner != null -> StrokedText(
                         text = resultBanner,
                         style = lpDigitStyle(28),
                         fillColor = DuelColors.LpYellow,
                         strokeColor = DuelColors.LpStroke,
-                        strokeWidth = 2.dp,
+                        strokeWidth = d.borderEmphasized,
                     )
                     myPick != null && !otherPicked -> Text(
                         "Waiting for opponent…",
@@ -255,6 +311,150 @@ private fun RpsHalf(
                     else -> Spacer(Modifier)
                 }
             }
+        }
+    }
+}
+
+/**
+ * Full-screen overlay shown to the RPS winner so they can pick their turn
+ * order. Rendered ONLY on the winner's half (rotated for them) so the loser
+ * can't tap by accident — and so the winner reads it upright across the table.
+ *
+ * Two big cards: GO FIRST (gold, default-emphasis) and GO SECOND (cool tone).
+ * A subtle pulsing glow draws the eye; tap either to commit.
+ */
+@Composable
+private fun TurnOrderChoiceOverlay(
+    winnerSlot: PlayerSlot,
+    winnerName: String,
+    onChoice: (theyGoFirst: Boolean) -> Unit,
+) {
+    val pulseTransition = rememberInfiniteTransition(label = "choicePulse")
+    val pulse by pulseTransition.animateFloat(
+        initialValue = 0.65f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(900), repeatMode = RepeatMode.Reverse),
+        label = "choicePulseAlpha",
+    )
+
+    // Position the choice card on the winner's HALF (top half for P2, bottom
+    // half for P1) and rotate so the winner reads it upright.
+    val alignment = if (winnerSlot == PlayerSlot.P2) Alignment.TopCenter else Alignment.BottomCenter
+
+    val d = DuelTheme.dimens
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f)),
+        contentAlignment = alignment,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = d.s16, vertical = d.s24 + d.s4)
+                .then(if (winnerSlot == PlayerSlot.P2) Modifier.rotate(180f) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(d.s14),
+            ) {
+                StrokedText(
+                    text = "$winnerName WON",
+                    style = lpDigitStyle(30),
+                    fillColor = DuelColors.LpYellow,
+                    strokeColor = DuelColors.LpStroke,
+                    strokeWidth = d.borderEmphasized,
+                )
+                Text(
+                    text = "Choose your turn order",
+                    color = DuelColors.DuelGoldGlow.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(d.s12),
+                ) {
+                    ChoiceCard(
+                        label = "GO FIRST",
+                        subtitle = "▶  draw, then act",
+                        accent = DuelColors.DuelGold,
+                        glow = DuelColors.DuelGoldGlow,
+                        pulse = pulse,
+                        emphasized = true,
+                        onClick = { onChoice(true) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ChoiceCard(
+                        label = "GO SECOND",
+                        subtitle = "wait, then react  ◀",
+                        accent = Color(0xFF5B8BE0),
+                        glow = Color(0xFFA8C6FF),
+                        pulse = pulse,
+                        emphasized = false,
+                        onClick = { onChoice(false) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChoiceCard(
+    label: String,
+    subtitle: String,
+    accent: Color,
+    glow: Color,
+    pulse: Float,
+    emphasized: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val d = DuelTheme.dimens
+    Box(
+        modifier = modifier
+            .height(d.touchLg * 2)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        accent.copy(alpha = if (emphasized) 0.50f else 0.30f),
+                        accent.copy(alpha = 0.18f),
+                        Color(0xFF0B0620),
+                    ),
+                ),
+                shape = RoundedCornerShape(d.radiusLg),
+            )
+            .border(
+                width = if (emphasized) d.borderBold else d.borderEmphasized,
+                color = if (emphasized) glow.copy(alpha = pulse) else glow.copy(alpha = 0.75f),
+                shape = RoundedCornerShape(d.radiusLg),
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = label,
+                color = glow,
+                fontSize = d.textIcon,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (d.trackExtraWide.value * 1.2f).sp,
+            )
+            Spacer(Modifier.height(d.s6))
+            Text(
+                text = subtitle,
+                color = glow.copy(alpha = 0.70f),
+                fontSize = d.textTiny,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = d.trackNormal,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
@@ -329,10 +529,11 @@ private fun ShuffleMarquee(
 
 @Composable
 private fun LockedCard(width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp, markerSp: Int) {
+    val d = DuelTheme.dimens
     Box(
         modifier = Modifier
             .size(width = width, height = height)
-            .background(DuelColors.DuelPurple, RoundedCornerShape(14.dp)),
+            .background(DuelColors.DuelPurple, RoundedCornerShape(d.radiusLg)),
         contentAlignment = Alignment.Center,
     ) {
         Text("?", color = DuelColors.DuelGoldGlow, fontSize = markerSp.sp, fontWeight = FontWeight.Bold)
@@ -340,16 +541,22 @@ private fun LockedCard(width: androidx.compose.ui.unit.Dp, height: androidx.comp
 }
 
 @Composable
-private fun CenterDivider(phase: Phase, rounds: Int) {
+private fun CenterDivider(phase: Phase, rounds: Int, choosingName: String?) {
+    val d = DuelTheme.dimens
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
+            .height(d.opponentPeekHeight)
             .background(Brush.horizontalGradient(listOf(Color.Transparent, DuelColors.DuelGold, Color.Transparent))),
         contentAlignment = Alignment.Center,
     ) {
-        when (phase) {
-            Phase.Picking -> Text(
+        when {
+            choosingName != null -> Text(
+                text = "$choosingName · CHOOSING TURN ORDER",
+                color = Color.Black,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            )
+            phase == Phase.Picking -> Text(
                 text = if (rounds == 1) "ROCK · PAPER · SCISSORS" else "ROUND $rounds",
                 color = Color.Black,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),

@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,22 +31,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ui.components.StrokedText
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 
 /**
- * Combat action being composed. All three carry a non-negative magnitude;
- * sign at LP resolution comes from the mode.
- *   - [Attack]    damages the opponent
- *   - [Heal]      restores the actor's own LP
- *   - [Sacrifice] damages the actor's own LP (tribute summons, self-cost cards)
+ * Combat action being composed. All four carry a non-negative magnitude;
+ * sign and target at LP resolution come from the mode.
+ *   - [DamageOpponent] subtracts LP from the opponent (attack).
+ *   - [HealOpponent]   adds LP to the opponent (card effects that buff the foe).
+ *   - [HealSelf]       restores the actor's own LP.
+ *   - [DamageSelf]     damages the actor's own LP (tribute, blood costs).
  */
-enum class LpActionMode { Attack, Heal, Sacrifice }
+enum class LpActionMode { DamageOpponent, HealOpponent, HealSelf, DamageSelf }
 
 /**
- * Triangular gauge overlay. Three geometries:
- *   - ATTACK: right triangle, head bottom-LEFT, hypotenuse → top-right.
- *   - HEAL:   right triangle (mirror), head bottom-RIGHT, hypotenuse → top-left.
- *   - SACRIFICE: isosceles, apex bottom-CENTER, marker is a horizontal
- *     level-line climbing from apex to top edge.
+ * Triangular gauge overlay. Geometries:
+ *   - DAMAGE OPPONENT: right triangle, apex bottom-LEFT, marker → top-right.
+ *   - HEAL OPPONENT:   isosceles centered at top (apex top-CENTER inverted)
+ *     so the "give" feel mirrors the self-heal direction.
+ *   - HEAL SELF:       right triangle (mirror), apex bottom-RIGHT, marker → top-left.
+ *   - DAMAGE SELF:     isosceles, apex bottom-CENTER, horizontal level-line
+ *     climbing from apex to top edge.
  *
  * The big readout sits at the TOP of the column so the rotated-180° version
  * (P2 pressing) puts the readout at the far screen edge, away from the
@@ -62,75 +67,82 @@ fun LpActionWheel(
     val accentDeep = panelAccentDeep(mode)
     val accentGlow = panelAccentGlow(mode)
 
+    val d = DuelTheme.dimens
     val open = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         open.animateTo(1f, tween(durationMillis = 220))
     }
-    val scale = open.value
+    val openScale = open.value
     val t = (value.toFloat() / maxValue.coerceAtLeast(1)).coerceIn(0f, 1f)
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                alpha = scale
-            },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        // Top of column → far screen edge for both players (P2's column is
-        // rotated 180°), so the readout stays away from the finger.
-        Box(
-            modifier = Modifier.fillMaxWidth().height(READOUT_HEIGHT_DP.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = modeLabel(mode),
-                    style = TextStyle(
-                        color = accentGlow,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 2.5.sp,
-                    ),
-                )
-                StrokedText(
-                    text = value.toString(),
-                    style = TextStyle(
-                        fontStyle = FontStyle.Italic,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 60.sp,
-                    ),
-                    fillColor = accentGlow,
-                    strokeColor = DuelColors.LpStroke,
-                    strokeWidth = 3.dp,
-                )
-            }
-        }
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        // Gauge readout + canvas both scale with the available space so the
+        // overlay reads big on a tablet and still legible on small phones.
+        val available = maxWidth.value
+        val titleSp = (available * 0.045f).coerceIn(13f, 22f)
+        val valueSp = (available * 0.18f).coerceIn(46f, 92f)
+        val readoutH = (available * 0.28f).coerceIn(76f, 140f)
+        val canvasH = (available * 0.62f).coerceIn(160f, 320f)
 
-        // Explicit height so the inner fillMaxSize resolves to a real
-        // surface (parent Column is wrap-content vertically).
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(CANVAS_HEIGHT_DP.dp),
+                .padding(horizontal = d.s16, vertical = d.s12)
+                .graphicsLayer {
+                    scaleX = openScale
+                    scaleY = openScale
+                    alpha = openScale
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(d.s10),
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                if (w <= 0f || h <= 0f) return@Canvas
-                drawGauge(
-                    mode = mode,
-                    t = t,
-                    w = w,
-                    h = h,
-                    accent = accent,
-                    accentDeep = accentDeep,
-                    accentGlow = accentGlow,
-                )
+            Box(
+                modifier = Modifier.fillMaxWidth().height(readoutH.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = modeLabel(mode),
+                        style = TextStyle(
+                            color = accentGlow,
+                            fontSize = titleSp.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = d.trackExtraWide,
+                        ),
+                    )
+                    StrokedText(
+                        text = value.toString(),
+                        style = TextStyle(
+                            fontStyle = FontStyle.Italic,
+                            fontWeight = FontWeight.Black,
+                            fontSize = valueSp.sp,
+                        ),
+                        fillColor = accentGlow,
+                        strokeColor = DuelColors.LpStroke,
+                        strokeWidth = d.borderBold,
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(canvasH.dp),
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    if (w <= 0f || h <= 0f) return@Canvas
+                    drawGauge(
+                        mode = mode,
+                        t = t,
+                        w = w,
+                        h = h,
+                        accent = accent,
+                        accentDeep = accentDeep,
+                        accentGlow = accentGlow,
+                    )
+                }
             }
         }
     }
@@ -146,19 +158,25 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawGauge(
     accentGlow: Color,
 ) {
     when (mode) {
-        LpActionMode.Attack -> drawCornerGauge(
+        LpActionMode.DamageOpponent -> drawCornerGauge(
             apex = Offset(0f, h),
             tip = Offset(w, 0f),
             rightAngle = Offset(0f, 0f),
             t = t, accent = accent, accentDeep = accentDeep, accentGlow = accentGlow,
         )
-        LpActionMode.Heal -> drawCornerGauge(
+        LpActionMode.HealOpponent -> drawCenterGauge(
+            apex = Offset(w / 2f, h),
+            topLeft = Offset(0f, 0f),
+            topRight = Offset(w, 0f),
+            t = t, accent = accent, accentDeep = accentDeep, accentGlow = accentGlow,
+        )
+        LpActionMode.HealSelf -> drawCornerGauge(
             apex = Offset(w, h),
             tip = Offset(0f, 0f),
             rightAngle = Offset(w, 0f),
             t = t, accent = accent, accentDeep = accentDeep, accentGlow = accentGlow,
         )
-        LpActionMode.Sacrifice -> drawCenterGauge(
+        LpActionMode.DamageSelf -> drawCenterGauge(
             apex = Offset(w / 2f, h),
             topLeft = Offset(0f, 0f),
             topRight = Offset(w, 0f),
@@ -408,10 +426,9 @@ private fun lerpOffset(a: Offset, b: Offset, t: Float): Offset =
     Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
 
 private fun modeLabel(mode: LpActionMode): String = when (mode) {
-    LpActionMode.Attack -> "ATTACK"
-    LpActionMode.Heal -> "HEAL"
-    LpActionMode.Sacrifice -> "SACRIFICE"
+    LpActionMode.DamageOpponent -> "DAMAGE OPPONENT"
+    LpActionMode.HealOpponent -> "HEAL OPPONENT"
+    LpActionMode.HealSelf -> "HEAL SELF"
+    LpActionMode.DamageSelf -> "DAMAGE SELF"
 }
 
-private const val READOUT_HEIGHT_DP = 96
-private const val CANVAS_HEIGHT_DP = 220

@@ -1,5 +1,6 @@
 package app.ui.duel
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,28 +33,34 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import app.audio.ActionSfx
 import app.audio.DuelAutoEvent
 import app.audio.DuelEventDetector
+import app.audio.GameSfx
 import app.audio.LocalLpSfx
 import app.audio.LocalOst
-import app.audio.MusicMode
-import app.audio.MusicSettings
+import app.audio.OneShotTracks
 import app.audio.OstEventScheduler
 import app.audio.OstTracks
+import app.model.DuelPhase
 import app.model.DuelState
 import app.model.Match
 import app.model.MatchEvent
 import app.model.Outcome
 import app.model.PlayerSlot
 import app.model.RpsPick
+import app.persistence.DuelSettings
 import app.persistence.DuelStore
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 import kotlin.time.Clock
@@ -72,9 +81,10 @@ import kotlin.time.Clock
  *   3. Outcome check is DEFERRED until the last entry settles, so a 0/0
  *      mid-batch resolves to a draw rather than locking in a winner.
  *
- * Music has three modes ([MusicMode]): Auto (driven by [OstEventScheduler]),
- * Manual (user-pinned track), Off. Match-end always plays Win/Draw track
- * regardless of mode.
+ * Music is a single ON/OFF toggle persisted in [DuelStore]. When on, the
+ * [OstEventScheduler] drives event-based track switches; when off, silence.
+ * Match-end music still plays Winner/Draw when enabled, with an applause
+ * SFX overlay regardless.
  */
 @Composable
 fun DuelScreen(
@@ -119,13 +129,14 @@ fun DuelScreen(
     }
 
     var showQuitConfirm by remember { mutableStateOf(false) }
-    var showMusicDialog by remember { mutableStateOf(false) }
     var showMiscDialog by remember { mutableStateOf(false) }
     // Match-end Rematch/Save buttons. Revealed ~1.8 s after the duel resolves
     // so the victory pulse has a moment before action UI shows up.
     var actionsVisible by remember { mutableStateOf(false) }
 
-    var musicSettings by remember { mutableStateOf(MusicSettings()) }
+    // Music is a persisted boolean — no in-duel mode/pack selection any more.
+    val settings by store.settings.collectAsState(initial = DuelSettings(musicEnabled = true))
+    val musicEnabled = settings.musicEnabled
     var p1Infinite by remember { mutableStateOf(false) }
     var p2Infinite by remember { mutableStateOf(false) }
 
@@ -153,6 +164,15 @@ fun DuelScreen(
     // can render on the OPPOSITE half from the pressing finger.
     var wheelOverlay by remember { mutableStateOf<WheelOverlay?>(null) }
 
+    // One-shot wheel overlay. Holds which player opened it (for rotation);
+    // null when closed.
+    var oneShotWheelOpen by remember { mutableStateOf<PlayerSlot?>(null) }
+
+    // Dice / coin overlays — neutral utilities, both faces designed
+    // 180°-symmetric so seated players read them without rotation.
+    var diceOverlayOpen by remember { mutableStateOf(false) }
+    var coinOverlayOpen by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
     val ost = LocalOst.current
     val lpSfx = LocalLpSfx.current
@@ -177,7 +197,7 @@ fun DuelScreen(
         target: PlayerSlot,
         delta: Int,
         fromState: DuelState,
-        actionSfx: ActionSfx,
+        sfx: GameSfx,
     ): DuelState {
         val before = fromState.lpOf(target)
         val after = (before + delta).coerceAtLeast(0)
@@ -192,7 +212,7 @@ fun DuelScreen(
             PlayerSlot.P1 -> p1FloatingDelta = delta
             PlayerSlot.P2 -> p2FloatingDelta = delta
         }
-        lpSfx.playActionSfx(actionSfx)
+        lpSfx.playSfx(sfx)
         delay(FLOATING_DELTA_TOTAL_MS)
 
         // Phase B: flip LP, fire the roll loop, schedule the settle chord.
@@ -242,10 +262,10 @@ fun DuelScreen(
         lpHistory = after.events.filterIsInstance<MatchEvent.LpChange>(),
     )
 
-    /** Auto-mode event dispatch after the post-settle wait. No-op if duel is over. */
+    /** Event dispatch after the post-settle wait. No-op if duel is over or music off. */
     suspend fun maybeFireEvents(after: DuelState, candidates: List<DuelAutoEvent>) {
         if (after.outcome.isOver) return
-        if (musicSettings.mode != MusicMode.Auto) return
+        if (!musicEnabled) return
         if (candidates.isEmpty()) return
         delay(POST_SETTLE_EVENT_DELAY_MS)
         eventScheduler.onLpAction()
@@ -274,20 +294,23 @@ fun DuelScreen(
                     // Translate StagedAction (mode + magnitude) → signed delta + target + SFX.
                     val target: PlayerSlot
                     val delta: Int
-                    val sfx: ActionSfx
+                    val sfx: GameSfx
                     when (entry.mode) {
-                        LpActionMode.Attack -> {
-                            target = opponent; delta = -entry.value; sfx = ActionSfx.Damage
+                        LpActionMode.DamageOpponent -> {
+                            target = opponent; delta = -entry.value; sfx = GameSfx.InflictDamage
                         }
-                        LpActionMode.Heal -> {
-                            target = actor; delta = entry.value; sfx = ActionSfx.Heal
+                        LpActionMode.HealOpponent -> {
+                            target = opponent; delta = entry.value; sfx = GameSfx.GainHeal
                         }
-                        LpActionMode.Sacrifice -> {
-                            target = actor; delta = -entry.value; sfx = ActionSfx.Blood
+                        LpActionMode.HealSelf -> {
+                            target = actor; delta = entry.value; sfx = GameSfx.GainHeal
+                        }
+                        LpActionMode.DamageSelf -> {
+                            target = actor; delta = -entry.value; sfx = GameSfx.InflictDamage
                         }
                     }
                     val before = working
-                    val advanced = runOneAction(target, delta, working, actionSfx = sfx)
+                    val advanced = runOneAction(target, delta, working, sfx = sfx)
                     if (advanced !== before) {
                         accumulatedEvents += detectFor(before, advanced, delta, target)
                         working = advanced
@@ -354,45 +377,52 @@ fun DuelScreen(
         }
     }
 
-    // Reset scheduler + fire MatchStart if Auto. Runs once when the screen
-    // composes (a Rematch destroys + recomposes this screen, so MatchStart
-    // is one-timer per duel, not per app session).
+    // Phase-banner trigger key — incremented on every phase change OR turn
+    // change, so PhaseBanner re-animates regardless of whether the new phase
+    // equals the previous one (e.g. DP → ... → EP → DP on a new turn).
+    var phaseBannerKey by remember { mutableStateOf(0) }
+    var bannerPhase by remember { mutableStateOf(state.currentPhase) }
+
+    // Initial match-start sequence: reset scheduler, play Standard if music
+    // is on, fire the first turn-start SFX, and show the first phase banner.
     LaunchedEffect(Unit) {
         eventScheduler.reset()
-        if (musicSettings.mode == MusicMode.Auto) {
-            eventScheduler.trigger(listOf(DuelAutoEvent.MatchStart))
+        if (musicEnabled) {
+            eventScheduler.trigger(listOf(DuelAutoEvent.Standard))
+        }
+        lpSfx.playSfx(GameSfx.TurnStart)
+        bannerPhase = state.currentPhase
+        phaseBannerKey++
+    }
+
+    // React to the music toggle. On enable, replay Standard (fresh start);
+    // on disable, silence both scheduler + engine. Skipped on first comp
+    // because LaunchedEffect(Unit) already handled the initial state.
+    var musicReactInit by remember { mutableStateOf(false) }
+    LaunchedEffect(musicEnabled) {
+        if (!musicReactInit) {
+            musicReactInit = true
+            return@LaunchedEffect
+        }
+        if (musicEnabled) {
+            eventScheduler.trigger(listOf(DuelAutoEvent.Standard))
+        } else {
+            eventScheduler.stop()
+            ost.stop()
         }
     }
 
-    // React to mode/track switches from the Music popover.
-    // Auto→Auto re-trigger of MatchStart is a no-op (one-timer already fired).
-    LaunchedEffect(musicSettings) {
-        when (musicSettings.mode) {
-            MusicMode.Disabled -> {
-                eventScheduler.stop()
-                ost.stop()
-            }
-            MusicMode.Manual -> {
-                eventScheduler.stop()
-                ost.play(OstTracks.dmp(musicSettings.pack, musicSettings.manualTrack))
-            }
-            MusicMode.Auto -> {
-                // Kick off MatchStart if no event has fired yet; otherwise
-                // the scheduler resumes naturally on the next LP action.
-                eventScheduler.trigger(listOf(DuelAutoEvent.MatchStart))
-            }
-        }
-    }
-
-    // Match-end: silence event scheduler, play win/draw track, persist match,
-    // reveal action buttons after a dramatic pause.
+    // Match-end: silence event scheduler, play winner/draw track + applause
+    // SFX overlay, persist match, reveal action buttons after a dramatic pause.
     LaunchedEffect(state.outcome) {
         if (!state.outcome.isOver) return@LaunchedEffect
         eventScheduler.stop()
-        if (musicSettings.mode != MusicMode.Disabled) {
-            val track = if (state.outcome is Outcome.Draw) OstTracks.MatchEndDraw else OstTracks.MatchEndWin
+        if (musicEnabled) {
+            val track = if (state.outcome is Outcome.Draw) OstTracks.MatchEndDraw else OstTracks.MatchEndWinner
             ost.play(track)
         }
+        // Applause SFX plays regardless of music — it's an event SFX, not music.
+        lpSfx.playSfx(GameSfx.Applause)
         lpSfx.stabilize()
         stabilizeJob?.cancel()
         delay(1800)
@@ -417,7 +447,31 @@ fun DuelScreen(
         state = state.copy(
             currentTurn = state.currentTurn.opposite(),
             turnNumber = state.turnNumber + 1,
+            currentPhase = DuelPhase.DrawPhase,
         )
+        lpSfx.playSfx(GameSfx.TurnStart)
+        bannerPhase = DuelPhase.DrawPhase
+        phaseBannerKey++
+    }
+
+    /**
+     * Advance one phase. Fires PhaseTransition SFX (or BattlePhase SFX when
+     * entering Battle Phase). On End Phase, the button is disabled — the
+     * player must use End Turn to commit the turn flip.
+     */
+    fun advancePhase() {
+        if (actionsLocked || state.outcome.isOver) return
+        val next = state.currentPhase.next() ?: return
+        state = state.copy(currentPhase = next)
+        val sfx = if (next == DuelPhase.BattlePhase) GameSfx.BattlePhase else GameSfx.PhaseTransition
+        lpSfx.playSfx(sfx)
+        bannerPhase = next
+        phaseBannerKey++
+    }
+
+    /** Music toggle — flips the persisted boolean. */
+    fun toggleMusic() {
+        scope.launch { store.setMusicEnabled(!musicEnabled) }
     }
 
     Box(
@@ -434,12 +488,16 @@ fun DuelScreen(
                 PlayerHalf(
                     playerName = state.player2,
                     selfLp = state.p2Lp,
+                    opponentName = state.player1,
+                    opponentLp = state.p1Lp,
+                    opponentIsInfinite = p1Infinite,
                     showFirstBadge = state.firstPlayer == PlayerSlot.P2 && state.turnNumber <= 2,
                     rotated = true,
                     onStageAction = { action -> stageAction(PlayerSlot.P2, action) },
                     onTapForValue = { mode -> keypadMode = mode },
                     bufferedActions = p2Buffer,
                     bufferEnabled = bufferMode,
+                    onBufferModeChange = { bufferMode = it },
                     onCommitBuffer = { commitBuffer(PlayerSlot.P2) },
                     onUndoBuffer = { undoBuffer(PlayerSlot.P2) },
                     onClearBuffer = { clearBuffer(PlayerSlot.P2) },
@@ -448,6 +506,10 @@ fun DuelScreen(
                     },
                     onEndTurn = ::endTurn,
                     endTurnEnabled = canEndTurn(),
+                    onOpenOneShotWheel = { oneShotWheelOpen = PlayerSlot.P2 },
+                    currentPhase = state.currentPhase,
+                    onAdvancePhase = ::advancePhase,
+                    turnNumber = state.turnNumber,
                     isInfinite = p2Infinite,
                     actionsEnabled = !actionsLocked && !state.outcome.isOver,
                     wheelMax = wheelMax,
@@ -471,11 +533,11 @@ fun DuelScreen(
             }
 
             CenterBar(
-                bufferMode = bufferMode,
-                onBufferModeChange = { bufferMode = it },
-                turnNumber = state.turnNumber,
-                onMusic = { showMusicDialog = true },
+                musicEnabled = musicEnabled,
+                onMusicToggle = ::toggleMusic,
                 onMisc = { showMiscDialog = true },
+                onDice = { diceOverlayOpen = true },
+                onCoin = { coinOverlayOpen = true },
                 onQuit = { showQuitConfirm = true },
             )
 
@@ -484,12 +546,16 @@ fun DuelScreen(
                 PlayerHalf(
                     playerName = state.player1,
                     selfLp = state.p1Lp,
+                    opponentName = state.player2,
+                    opponentLp = state.p2Lp,
+                    opponentIsInfinite = p2Infinite,
                     showFirstBadge = state.firstPlayer == PlayerSlot.P1 && state.turnNumber <= 2,
                     rotated = false,
                     onStageAction = { action -> stageAction(PlayerSlot.P1, action) },
                     onTapForValue = { mode -> keypadMode = mode },
                     bufferedActions = p1Buffer,
                     bufferEnabled = bufferMode,
+                    onBufferModeChange = { bufferMode = it },
                     onCommitBuffer = { commitBuffer(PlayerSlot.P1) },
                     onUndoBuffer = { undoBuffer(PlayerSlot.P1) },
                     onClearBuffer = { clearBuffer(PlayerSlot.P1) },
@@ -498,6 +564,10 @@ fun DuelScreen(
                     },
                     onEndTurn = ::endTurn,
                     endTurnEnabled = canEndTurn(),
+                    onOpenOneShotWheel = { oneShotWheelOpen = PlayerSlot.P1 },
+                    currentPhase = state.currentPhase,
+                    onAdvancePhase = ::advancePhase,
+                    turnNumber = state.turnNumber,
                     isInfinite = p1Infinite,
                     actionsEnabled = !actionsLocked && !state.outcome.isOver,
                     wheelMax = wheelMax,
@@ -527,13 +597,14 @@ fun DuelScreen(
         // table.
         wheelOverlay?.let { overlay ->
             val pressingIsP2 = overlay.pressingSlot == PlayerSlot.P2
+            val gd = DuelTheme.dimens
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.55f)),
                 contentAlignment = if (pressingIsP2) Alignment.BottomCenter else Alignment.TopCenter,
             ) {
-                Box(modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp)) {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = gd.s12)) {
                     LpActionWheel(
                         mode = overlay.mode,
                         value = overlay.value,
@@ -543,6 +614,61 @@ fun DuelScreen(
                 }
             }
         }
+
+        oneShotWheelOpen?.let { slot ->
+            val activeOverlay by ost.currentOverlay.collectAsState()
+            val items = remember {
+                listOf(
+                    OneShotItem(
+                        displayName = "Tribute",
+                        track = OneShotTracks.Tribute,
+                        accent = DuelColors.DuelGold,
+                    ),
+                    OneShotItem(
+                        displayName = "Fusion",
+                        track = OneShotTracks.Fusion,
+                        accent = Color(0xFF8E6FD3),
+                    ),
+                    OneShotItem(
+                        displayName = "Special",
+                        track = OneShotTracks.Special,
+                        accent = Color(0xFF5B8BE0),
+                    ),
+                    OneShotItem(
+                        displayName = "Exodia",
+                        track = OneShotTracks.Exodia,
+                        accent = DuelColors.Crimson,
+                    ),
+                )
+            }
+            OneShotWheel(
+                items = items,
+                activeKey = activeOverlay?.cacheKey,
+                onToggle = { item ->
+                    if (activeOverlay?.cacheKey == item.track.cacheKey) ost.stopOverlay()
+                    else ost.playOverlay(item.track)
+                },
+                onDismiss = { oneShotWheelOpen = null },
+                rotated = slot == PlayerSlot.P2,
+            )
+        }
+
+        if (diceOverlayOpen) {
+            DiceRollOverlay(onDismiss = { diceOverlayOpen = false })
+        }
+
+        if (coinOverlayOpen) {
+            CoinFlipOverlay(onDismiss = { coinOverlayOpen = false })
+        }
+
+        // Phase banner — rendered above the regular UI but below the overlays
+        // so it doesn't fight the dice/coin/oneshot wheels. The banner gates
+        // its own visibility via its internal scrim animatable.
+        PhaseBanner(
+            phase = bannerPhase,
+            activeSlot = state.currentTurn,
+            phaseChangeKey = phaseBannerKey,
+        )
 
         if (state.outcome.isOver) {
             VictoryOverlay(
@@ -571,14 +697,6 @@ fun DuelScreen(
                 TextButton(onClick = { showQuitConfirm = false }) { Text("Keep playing") }
             },
             containerColor = Color(0xFF1A1140),
-        )
-    }
-
-    if (showMusicDialog) {
-        MusicSettingsDialog(
-            settings = musicSettings,
-            onSettingsChange = { musicSettings = it },
-            onDismiss = { showMusicDialog = false },
         )
     }
 
@@ -613,54 +731,52 @@ private data class WheelOverlay(
     val value: Int,
 )
 
-// Center bar between the two halves. Houses the popovers (Music, Misc),
-// the global Auto/Queue toggle, and Quit. End Turn moved into each player's
-// own half (see [PlayerHalf]) so the action lives next to the actor.
+// Center bar between the two halves. The leading ♪ button is now a music
+// ON/OFF toggle (no popover); ✦ opens the Misc dialog (infinite-LP toggles);
+// the dice/coin buttons trigger their 3D overlays.
 @Composable
 private fun CenterBar(
-    bufferMode: Boolean,
-    onBufferModeChange: (Boolean) -> Unit,
-    turnNumber: Int,
-    onMusic: () -> Unit,
+    musicEnabled: Boolean,
+    onMusicToggle: () -> Unit,
     onMisc: () -> Unit,
+    onDice: () -> Unit,
+    onCoin: () -> Unit,
     onQuit: () -> Unit,
 ) {
+    val d = DuelTheme.dimens
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .height(d.centerBarHeight)
             .background(Color(0xFF120A33))
-            .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.5f)),
+            .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.5f)),
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = d.s8, vertical = d.s4),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(d.s6),
         ) {
-            CenterIconButton(label = "♪", onClick = onMusic)
+            MusicToggleButton(enabled = musicEnabled, onClick = onMusicToggle)
             CenterIconButton(label = "✦", onClick = onMisc)
-            BufferModeToggle(
-                enabled = bufferMode,
-                turnNumber = turnNumber,
-                onChange = onBufferModeChange,
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-            )
+            CenterCanvasButton(onClick = onDice) { drawDiceMini() }
+            CenterCanvasButton(onClick = onCoin) { drawCoinMini() }
+            Box(modifier = Modifier.weight(1f))
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .background(Color(0xFF1A1140), RoundedCornerShape(10.dp))
-                    .border(1.dp, DuelColors.Crimson.copy(alpha = 0.7f), RoundedCornerShape(10.dp)),
+                    .background(Color(0xFF1A1140), RoundedCornerShape(d.radiusMd))
+                    .border(d.borderHairline, DuelColors.Crimson.copy(alpha = 0.7f), RoundedCornerShape(d.radiusMd)),
                 contentAlignment = Alignment.Center,
             ) {
                 TextButton(
                     onClick = onQuit,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    contentPadding = PaddingValues(horizontal = d.s12, vertical = 0.dp),
                 ) {
                     Text(
                         "Quit",
                         color = DuelColors.Crimson,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontSize = d.textBody,
                     )
                 }
             }
@@ -668,70 +784,139 @@ private fun CenterBar(
     }
 }
 
-// Pill that swaps between AUTO COMMIT and QUEUE MODE. When QUEUE is on,
-// staged actions stack in the per-player buffer strip until the player
-// presses Commit; when AUTO is on, each staged action runs immediately.
-// Subtext shows "Turn N" so the bar still surfaces the turn counter.
-@Composable
-private fun BufferModeToggle(
-    enabled: Boolean,
-    turnNumber: Int,
-    onChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val border = if (enabled) DuelColors.DuelGoldGlow else DuelColors.DuelGold.copy(alpha = 0.6f)
-    val bg = if (enabled) DuelColors.DuelGold.copy(alpha = 0.30f) else Color(0xFF1A1140)
-    val label = if (enabled) "QUEUE MODE" else "AUTO COMMIT"
-    Box(
-        modifier = modifier
-            .background(bg, RoundedCornerShape(10.dp))
-            .border(if (enabled) 2.dp else 1.dp, border, RoundedCornerShape(10.dp))
-            .clickable { onChange(!enabled) },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = label,
-                color = DuelColors.DuelGoldGlow,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 13.sp,
-                letterSpacing = 1.5.sp,
-                maxLines = 1,
-            )
-            Text(
-                text = "Turn $turnNumber",
-                color = DuelColors.DuelGoldGlow.copy(alpha = 0.55f),
-                fontSize = 9.sp,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
 @Composable
 private fun CenterIconButton(label: String, onClick: () -> Unit) {
+    val d = DuelTheme.dimens
     Box(
         modifier = Modifier
-            .height(40.dp)
-            .background(Color(0xFF1A1140), RoundedCornerShape(10.dp))
-            .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.7f), RoundedCornerShape(10.dp)),
+            .fillMaxHeight()
+            .background(Color(0xFF1A1140), RoundedCornerShape(d.radiusMd))
+            .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.7f), RoundedCornerShape(d.radiusMd)),
         contentAlignment = Alignment.Center,
     ) {
         TextButton(
             onClick = onClick,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+            contentPadding = PaddingValues(horizontal = d.s12, vertical = 0.dp),
         ) {
             Text(
                 label,
                 color = DuelColors.DuelGoldGlow,
                 fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
+                fontSize = d.textIcon,
             )
         }
     }
+}
+
+/**
+ * Music ON/OFF toggle button. ♪ when enabled (gold), ♪̸ (note with slash)
+ * when muted — the strike-through is drawn explicitly so it renders on any
+ * platform that's missing the U+266A combining variants.
+ */
+@Composable
+private fun MusicToggleButton(enabled: Boolean, onClick: () -> Unit) {
+    val d = DuelTheme.dimens
+    val borderColor = if (enabled) DuelColors.DuelGold.copy(alpha = 0.7f)
+    else DuelColors.DuelGold.copy(alpha = 0.30f)
+    val labelColor = if (enabled) DuelColors.DuelGoldGlow else DuelColors.DuelGoldGlow.copy(alpha = 0.40f)
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .background(Color(0xFF1A1140), RoundedCornerShape(d.radiusMd))
+            .border(d.borderHairline, borderColor, RoundedCornerShape(d.radiusMd))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                "♪",
+                color = labelColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = d.textIcon,
+                modifier = Modifier.padding(horizontal = d.s12),
+            )
+            if (!enabled) {
+                Canvas(modifier = Modifier.size(width = d.s32, height = d.s32 - d.s2)) {
+                    drawLine(
+                        color = DuelColors.Crimson,
+                        start = androidx.compose.ui.geometry.Offset(size.width * 0.10f, size.height * 0.85f),
+                        end = androidx.compose.ui.geometry.Offset(size.width * 0.90f, size.height * 0.15f),
+                        strokeWidth = 3f,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Icon button that draws its glyph via Canvas — no font dependency, so the
+// dice and coin glyphs render identically across platforms.
+@Composable
+private fun CenterCanvasButton(
+    onClick: () -> Unit,
+    draw: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit,
+) {
+    val d = DuelTheme.dimens
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .background(Color(0xFF1A1140), RoundedCornerShape(d.radiusMd))
+            .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.7f), RoundedCornerShape(d.radiusMd))
+            .clickable(onClick = onClick)
+            .padding(horizontal = d.s12),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(d.textIcon.value.dp), onDraw = draw)
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDiceMini() {
+    val r = size.minDimension / 2f
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    drawRoundRect(
+        color = DuelColors.DuelGoldGlow,
+        topLeft = Offset(0f, 0f),
+        size = size,
+        cornerRadius = CornerRadius(r * 0.32f),
+    )
+    drawRoundRect(
+        color = Color(0xFF6B4F1A),
+        topLeft = Offset(0f, 0f),
+        size = size,
+        cornerRadius = CornerRadius(r * 0.32f),
+        style = Stroke(width = r * 0.16f),
+    )
+    val pipR = r * 0.13f
+    val inset = r * 0.45f
+    drawCircle(color = Color(0xFF120A33), radius = pipR, center = Offset(cx - inset, cy - inset))
+    drawCircle(color = Color(0xFF120A33), radius = pipR, center = Offset(cx + inset, cy - inset))
+    drawCircle(color = Color(0xFF120A33), radius = pipR, center = Offset(cx, cy))
+    drawCircle(color = Color(0xFF120A33), radius = pipR, center = Offset(cx - inset, cy + inset))
+    drawCircle(color = Color(0xFF120A33), radius = pipR, center = Offset(cx + inset, cy + inset))
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCoinMini() {
+    val r = size.minDimension / 2f
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(DuelColors.DuelGoldGlow, DuelColors.DuelGold, Color(0xFFB8893A)),
+            center = Offset(cx - r * 0.30f, cy - r * 0.30f),
+            radius = r,
+        ),
+        radius = r,
+        center = Offset(cx, cy),
+    )
+    drawCircle(
+        color = Color(0xFF6B4F1A),
+        radius = r * 0.96f,
+        center = Offset(cx, cy),
+        style = Stroke(width = r * 0.14f),
+    )
+    drawCircle(color = Color(0xFF120A33), radius = r * 0.18f, center = Offset(cx, cy))
+    drawCircle(color = Color.White.copy(alpha = 0.6f), radius = r * 0.06f, center = Offset(cx - r * 0.05f, cy - r * 0.05f))
 }
 
 private const val STABILIZE_DELAY_MS = 320L

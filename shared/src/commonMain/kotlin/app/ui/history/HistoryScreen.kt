@@ -38,6 +38,7 @@ import app.model.Match
 import app.model.PlayerSlot
 import app.persistence.DuelStore
 import app.ui.theme.DuelColors
+import app.ui.theme.DuelTheme
 import app.util.formatDateTime
 import app.util.formatDuration
 import kotlinx.coroutines.launch
@@ -57,6 +58,7 @@ fun HistoryScreen(
     var showClearConfirm by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    val d = DuelTheme.dimens
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -64,7 +66,7 @@ fun HistoryScreen(
             .windowInsetsPadding(WindowInsets.systemBars),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = d.s12, vertical = d.s8),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -91,11 +93,11 @@ fun HistoryScreen(
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxSize().padding(horizontal = d.s12),
+                verticalArrangement = Arrangement.spacedBy(d.s8),
             ) {
                 items(matches, key = { it.id }) { match -> MatchRow(match, onClick = { onOpen(match) }) }
-                item { Spacer(Modifier.height(16.dp)) }
+                item { Spacer(Modifier.height(d.s16)) }
             }
         }
     }
@@ -121,6 +123,7 @@ fun HistoryScreen(
 
 @Composable
 private fun MatchRow(match: Match, onClick: () -> Unit) {
+    val d = DuelTheme.dimens
     val winnerName = when {
         match.isDraw -> "Draw"
         match.winner != null -> if (match.winner == PlayerSlot.P1) match.player1 else match.player2
@@ -129,12 +132,12 @@ private fun MatchRow(match: Match, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF1A1140), RoundedCornerShape(12.dp))
-            .border(1.dp, DuelColors.DuelGold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .background(Color(0xFF1A1140), RoundedCornerShape(d.radiusMd))
+            .border(d.borderHairline, DuelColors.DuelGold.copy(alpha = 0.4f), RoundedCornerShape(d.radiusMd))
             .clickable(onClick = onClick)
-            .padding(14.dp),
+            .padding(d.s14),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(d.s4)) {
             Text(
                 text = "${match.player1}  vs  ${match.player2}",
                 style = MaterialTheme.typography.titleMedium,
